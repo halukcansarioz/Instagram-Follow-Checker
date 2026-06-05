@@ -1,186 +1,190 @@
-(() => {
-  if (document.getElementById("igTrackerPanel")) {
-    document.getElementById("igTrackerPanel").remove();
-  }
+# Instagram Follow Checker
 
-  const appId = "936619743392459";
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
+![Demo](images/demo.png)
 
-  const panel = document.createElement("div");
-  panel.id = "igTrackerPanel";
+A browser-based Instagram follower analysis tool that helps users identify accounts they follow that do not follow them back.
 
-  panel.style.cssText = `
-    position:fixed;
-    top:20px;
-    right:20px;
-    width:420px;
-    max-height:90vh;
-    overflow:auto;
-    z-index:999999;
-    background:#111827;
-    color:white;
-    padding:15px;
-    border-radius:15px;
-    box-shadow:0 0 25px rgba(0,0,0,.5);
-    font-family:Arial,sans-serif;
-  `;
+![JavaScript](https://img.shields.io/badge/JavaScript-ES6-yellow)
+![Platform](https://img.shields.io/badge/Platform-Web-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-  panel.innerHTML = `
-    <h2 style="margin-top:0;text-align:center;">Instagram Takip Kontrol</h2>
+---
 
-    <input id="igUserInput" placeholder="Kullanıcı adını gir"
-      style="width:100%;box-sizing:border-box;padding:12px;border:none;border-radius:10px;margin-bottom:10px;font-size:15px;">
+## 📖 Overview
 
-    <button id="igStartBtn"
-      style="width:100%;padding:12px;border:none;border-radius:10px;background:#3b82f6;color:white;font-size:18px;font-weight:bold;cursor:pointer;">
-      Kontrol Et
-    </button>
+Instagram Follow Checker is a lightweight JavaScript tool that runs directly inside the browser console.
 
-    <div id="igStatus" style="margin-top:10px;color:#d1d5db;font-size:14px;">Hazır.</div>
+The tool compares your followers and following lists and displays accounts that you follow but do not follow you back.
 
-    <div id="igStats" style="margin-top:10px;font-size:18px;line-height:1.6;"></div>
+No password is required, and no data is sent to external servers.
 
-    <textarea id="igResult" readonly
-      style="width:100%;height:350px;box-sizing:border-box;margin-top:10px;padding:12px;background:#1f2937;color:#ffffff;border:1px solid #374151;border-radius:10px;resize:none;font-size:14px;"></textarea>
+---
 
-    <button id="igCopyBtn"
-      style="width:100%;margin-top:10px;padding:12px;border:none;border-radius:10px;background:#4b5563;color:white;font-size:16px;cursor:pointer;">
-      Sonucu Kopyala
-    </button>
+## ✨ Features
 
-    <button id="igCloseBtn"
-      style="width:100%;margin-top:10px;padding:12px;border:none;border-radius:10px;background:#dc2626;color:white;font-size:16px;cursor:pointer;">
-      Paneli Kapat
-    </button>
-  `;
+- Find users who do not follow you back
+- Modern graphical interface (GUI)
+- One-click copy results
+- Browser-side execution
+- No third-party dependencies
+- No external database required
+- Lightweight and easy to use
 
-  document.body.appendChild(panel);
+---
 
-  const status = document.getElementById("igStatus");
-  const stats = document.getElementById("igStats");
-  const result = document.getElementById("igResult");
+## 🛠 Technologies Used
 
-  function setStatus(text) {
-    status.textContent = text;
-  }
+- JavaScript (ES6+)
+- HTML DOM Manipulation
+- Instagram Web Endpoints
 
-  async function getUserId(username) {
-    const res = await fetch(
-      `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`,
-      {
-        credentials: "include",
-        headers: {
-          "x-ig-app-id": appId
-        }
-      }
-    );
+---
 
-    const data = await res.json();
+## 🚀 Installation
 
-    if (!data?.data?.user?.id) {
-      throw new Error("Kullanıcı bulunamadı.");
-    }
+### Clone the Repository
 
-    return data.data.user.id;
-  }
+```bash
+git clone https://github.com/halukcansarioz/Instagram-Follow-Checker.git
+cd Instagram-Follow-Checker
+```
 
-  async function getList(userId, type) {
-    let users = [];
-    let maxId = "";
+---
 
-    while (true) {
-      const url =
-        `https://www.instagram.com/api/v1/friendships/${userId}/${type}/?count=200` +
-        (maxId ? `&max_id=${maxId}` : "");
+## 📋 Usage
 
-      const res = await fetch(url, {
-        credentials: "include",
-        headers: {
-          "x-ig-app-id": appId
-        }
-      });
+### Step 1: Open Instagram
 
-      const data = await res.json();
+Navigate to:
 
-      if (!data.users) {
-        throw new Error("Instagram verileri alınamadı.");
-      }
+```text
+https://www.instagram.com
+```
 
-      users.push(
-        ...data.users.map(u => ({
-          username: u.username,
-          full_name: u.full_name || ""
-        }))
-      );
+and log into your account.
 
-      setStatus(
-        `${type === "followers" ? "Takipçiler" : "Takip edilenler"} alınıyor... (${users.length})`
-      );
+### Step 2: Open Browser Developer Tools
 
-      if (!data.next_max_id) break;
+Press:
 
-      maxId = data.next_max_id;
-      await sleep(1200);
-    }
+```text
+F12
+```
 
-    return users;
-  }
+or
 
-  document.getElementById("igStartBtn").onclick = async () => {
-    const username = document.getElementById("igUserInput").value.trim();
+```text
+Ctrl + Shift + I
+```
 
-    if (!username) {
-      alert("Kullanıcı adı giriniz.");
-      return;
-    }
+and select the **Console** tab.
 
-    try {
-      result.value = "";
-      stats.innerHTML = "";
+### Step 3: Allow Pasting
 
-      setStatus("Kullanıcı bilgileri alınıyor...");
+If Chrome displays a warning message, type:
 
-      const userId = await getUserId(username);
+```text
+allow pasting
+```
 
-      const followers = await getList(userId, "followers");
-      const following = await getList(userId, "following");
+and press Enter.
 
-      const followerSet = new Set(followers.map(x => x.username));
+### Step 4: Execute the Script
 
-      const notFollowingBack = following.filter(
-        x => !followerSet.has(x.username)
-      );
+Open the `script.js` file from this repository.
 
-      stats.innerHTML = `
-        <b>Takipçi:</b> ${followers.length}<br>
-        <b>Takip edilen:</b> ${following.length}<br>
-        <b>Seni takip etmeyen:</b> ${notFollowingBack.length}
-      `;
+Copy the entire contents of the file.
 
-      result.value = notFollowingBack
-        .map(
-          (u, i) =>
-            `${i + 1}. @${u.username}${u.full_name ? " - " + u.full_name : ""}`
-        )
-        .join("\n");
+Paste it into the browser console and press Enter.
 
-      setStatus("İşlem tamamlandı.");
-    } catch (err) {
-      console.error(err);
-      setStatus("Hata: " + err.message);
-    }
-  };
+### Step 5: Launch the Tool
 
-  document.getElementById("igCopyBtn").onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(result.value);
-      setStatus("Sonuç panoya kopyalandı.");
-    } catch {
-      setStatus("Kopyalama başarısız.");
-    }
-  };
+A graphical interface will appear in the top-right corner of the page.
 
-  document.getElementById("igCloseBtn").onclick = () => {
-    panel.remove();
-  };
-})();
+Enter your Instagram username and click:
+
+```text
+Kontrol Et
+```
+
+### Step 6: Analyze Results
+
+The application will display:
+
+- Total Followers
+- Total Following
+- Users Who Don't Follow You Back
+
+You can copy the results using the **Sonucu Kopyala** button.
+
+---
+
+## 📂 Project Structure
+
+```text
+Instagram-Follow-Checker/
+│
+├── README.md
+├── script.js
+├── LICENSE
+└── images/
+    └── demo.png
+```
+
+---
+
+## 📸 Example Output
+
+```text
+Followers: 348
+Following: 360
+Not Following Back: 16
+
+1. @example_user
+2. @another_user
+3. @sample_account
+```
+
+---
+
+## ⚠ Disclaimer
+
+This project is not affiliated with Instagram or Meta.
+
+The tool relies on Instagram web endpoints that may change without notice. Future Instagram updates may cause the script to stop functioning correctly.
+
+Use this project responsibly and only with accounts you own or are authorized to access.
+
+---
+
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome.
+
+If you would like to improve the project:
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Open a Pull Request
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
+See the LICENSE file for more information.
+
+---
+
+## 👨‍💻 Author
+
+**Haluk Can Sarıöz**
+
+- GitHub: https://github.com/halukcansarioz
+- Email: halukcansarioz19@gmail.com
+
+---
+
+⭐ If you found this project useful, consider giving it a star on GitHub.
