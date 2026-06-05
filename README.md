@@ -12,7 +12,7 @@ A browser-based Instagram follower analysis tool that helps users identify accou
 
 Instagram Follow Checker is a lightweight JavaScript tool that runs directly inside the browser console.
 
-The tool compares your followers and following lists and displays accounts that you follow but that do not follow you back.
+The tool compares your followers and following lists and displays accounts that you follow but do not follow you back.
 
 No password is required, and no data is sent to external servers.
 
@@ -42,7 +42,7 @@ No password is required, and no data is sent to external servers.
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/halukcansarioz/instagram-follow-checker.git
+git clone https://github.com/halukcansarioz/Instagram-Follow-Checker.git
 ```
 
 ### 2. Open Instagram
@@ -98,11 +98,13 @@ The application will display:
 ## 📂 Project Structure
 
 ```text
-instagram-follow-checker/
+Instagram-Follow-Checker/
 │
 ├── README.md
 ├── script.js
-└── LICENSE
+├── LICENSE
+└── images/
+    └── demo.png
 ```
 
 ---
@@ -125,7 +127,7 @@ Not Following Back: 16
 
 This project is not affiliated with Instagram or Meta.
 
-The tool relies on web endpoints that may change without notice. Future Instagram updates may cause the script to stop functioning correctly.
+The tool relies on Instagram web endpoints that may change without notice. Future Instagram updates may cause the script to stop functioning correctly.
 
 Use this project responsibly and only with accounts you own or are authorized to access.
 
