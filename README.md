@@ -1,6 +1,6 @@
 # Instagram Follow Checker
 
-A browser-based Instagram follower analysis tool that helps users identify accounts they follow that do not follow them back.
+A browser-based Instagram follower analysis tool that helps users identify follower relationships directly from Instagram.
 
 ![JavaScript](https://img.shields.io/badge/JavaScript-ES6-yellow)
 ![Platform](https://img.shields.io/badge/Platform-Web-blue)
@@ -12,7 +12,7 @@ A browser-based Instagram follower analysis tool that helps users identify accou
 
 Instagram Follow Checker is a lightweight JavaScript tool that runs directly inside the browser console.
 
-The tool compares your followers and following lists and displays accounts that you follow but do not follow you back.
+The application analyzes follower and following relationships and provides detailed insights through an interactive graphical interface.
 
 No password is required, and no data is sent to external servers.
 
@@ -20,12 +20,30 @@ No password is required, and no data is sent to external servers.
 
 ## ✨ Features
 
+### Follow Analysis
+
 - Find users who do not follow you back
+- Find users who follow you but are not followed back
+- View mutual followers
+
+### User Interface
+
 - Modern graphical interface (GUI)
-- One-click copy results
+- Search and filter results
+- Open Instagram profiles directly
+- Copy results to clipboard
+
+### Export Options
+
+- Export results as CSV
+- Download categorized reports
+
+### Technical Features
+
 - Browser-side execution
 - No third-party dependencies
 - No external database required
+- Lightweight and easy to use
 
 ---
 
@@ -37,19 +55,28 @@ No password is required, and no data is sent to external servers.
 
 ---
 
-## 🚀 Getting Started
-
-### 1. Clone the Repository
+## 🚀 Installation
 
 ```bash
 git clone https://github.com/halukcansarioz/Instagram-Follow-Checker.git
+cd Instagram-Follow-Checker
 ```
 
-### 2. Open Instagram
+---
 
-Log in to your Instagram account using a desktop browser.
+## 📋 Usage
 
-### 3. Open Developer Tools
+### Step 1: Open Instagram
+
+Navigate to:
+
+```text
+https://www.instagram.com
+```
+
+and log into your account.
+
+### Step 2: Open Developer Tools
 
 Press:
 
@@ -57,15 +84,15 @@ Press:
 F12
 ```
 
-or
+or:
 
 ```text
-Right Click → Inspect
+Ctrl + Shift + I
 ```
 
-Navigate to the **Console** tab.
+Then open the **Console** tab.
 
-### 4. Allow Pasting
+### Step 3: Allow Pasting
 
 If Chrome displays a warning message, type:
 
@@ -75,11 +102,15 @@ allow pasting
 
 and press Enter.
 
-### 5. Run the Script
+### Step 4: Execute the Script
 
-Copy the contents of `script.js`, paste it into the browser console, and press Enter.
+Open the `script.js` file.
 
-### 6. Analyze Your Account
+Copy the entire contents of the file.
+
+Paste it into the browser console and press Enter.
+
+### Step 5: Start Analysis
 
 Enter your Instagram username and click:
 
@@ -87,11 +118,38 @@ Enter your Instagram username and click:
 Kontrol Et
 ```
 
-The application will display:
+### Step 6: Explore Results
 
-- Total Followers
-- Total Following
-- Accounts That Do Not Follow You Back
+The application provides three categories:
+
+#### Users Who Don't Follow You Back
+
+```text
+You follow them
++
+They don't follow you
+```
+
+#### Users You Don't Follow Back
+
+```text
+They follow you
++
+You don't follow them
+```
+
+#### Mutual Followers
+
+```text
+You follow each other
+```
+
+### Additional Actions
+
+- Search users instantly
+- Open profiles directly
+- Copy results
+- Export results as CSV
 
 ---
 
@@ -102,24 +160,18 @@ Instagram-Follow-Checker/
 │
 ├── README.md
 ├── script.js
-├── LICENSE
-└── images/
-    └── demo.png
+└── LICENSE
 ```
 
 ---
 
-## 📸 Example Output
+## 📊 Statistics Dashboard
 
-```text
-Followers: 348
-Following: 360
-Not Following Back: 16
+The tool displays:
 
-1. @example_user
-2. @another_user
-3. @sample_account
-```
+- Total Followers
+- Total Following
+- Users Not Following Back
 
 ---
 
@@ -137,13 +189,20 @@ Use this project responsibly and only with accounts you own or are authorized to
 
 Contributions, issues, and feature requests are welcome.
 
-Feel free to fork the repository and submit a pull request.
+If you would like to contribute:
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Open a Pull Request
 
 ---
 
 ## 📄 License
 
 This project is licensed under the MIT License.
+
+See the LICENSE file for more information.
 
 ---
 
@@ -152,3 +211,7 @@ This project is licensed under the MIT License.
 **Haluk Can Sarıöz**
 
 GitHub: https://github.com/halukcansarioz
+
+---
+
+⭐ If you found this project useful, consider giving it a star on GitHub.
