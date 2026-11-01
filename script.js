@@ -1,24 +1,7 @@
 /**
- * Instagram Follow Checker Pro — Tam Sürüm (v10 Pro — Kusursuz Responsive Header, Modern Segmented Tabs & Tarayıcı Teması)
- *
- * v10 Pro Yenilikleri ve Düzeltmeleri:
- * 1. Pencere Daraltıldığında Üst Butonların Kaybolması Kesin Olarak Çözüldü (Resim 2 Çözümü):
- *    - Üst başlık çubuğu (`igfc-header`) esnek yapıya (`flex-wrap: wrap`) kavuşturuldu ve
- *      pencere kontrol butonları (`A-`, `A+`, `—`, `⛶`, `✕`) sağ tarafa sabitlendi (`margin-left: auto`).
- *    - İstatistik kartları sabit 7 sütun yerine `grid-template-columns: repeat(auto-fit, minmax(115px, 1fr))`
- *      yapısına geçirildi; pencereyi ne kadar daraltırsanız daraltın hiçbir kart veya buton sağdan kesilmez!
- * 2. Sekme ve Seçim Butonlarının Tasarımı Yenilendi (Resim 1 Çözümü):
- *    - Sekmeler dağınık balonlar yerine modern, ikonlu ve sayı rozetli bir Segmented Control
- *      (Sekme Şeridi) içine alındı.
- *    - "Tümünü Seç | Tersini Seç | Temizle" butonları birleşik kapsül (Segmented Pill Toolbar)
- *      tasarımına dönüştürüldü; böylece sekmelerle asla karışmaz ve çok şık durur.
- * 3. İlk Açılışta Otomatik Tarayıcı / Sistem Teması Algılama (`system` — Açık & Koyu Mod):
- *    - İlk açılışta tarayıcınızın / işletim sisteminizin temasını (`prefers-color-scheme`) ve
- *      Instagram'ın aktif modunu otomatik algılar. Tarayıcınız Açık (Light) temadaysa ferah Açık Tema,
- *      Koyu (Dark) temadaysa Koyu Tema ile açılır ve canlı olarak değişimi takip eder.
- * 4. Yeni Eklenen "Karşılaştır & Araçlar" Bölümü:
- *    - İki farklı tarama zamanını veya listeyi karşılaştırma, Hızlı Beyaz Liste (Toplu kullanıcı adı
- *      yapıştırarak koruma), ve Tek Tıkla Güvenli Temizlik Sihirbazı eklendi.
+ * Instagram Follow Checker Pro – Tam Sürüm (v10.2 Pro Ultimate)
+ * Kusursuz Responsive Header, Modern Segmented Tabs, Otomatik Tarayıcı Teması,
+ * 429 Rate-Limit Koruması, Karşılaştırma & Ayarlar Modalları ve "Son Takip Kişisini Çıkart" Modülü
  */
 
 (() => {
@@ -28,7 +11,7 @@
   const existingEl = document.getElementById(EXISTING_ID);
   if (existingEl) existingEl.remove();
 
-  // Sabitler
+  // Sabitler (Instagram GraphQL Query Hashes & API Parameters)
   const IG_APP_ID = '936619743392459';
   const FOLLOWERS_QUERY_HASH = 'c76146de99bb02f6415203be841dd25a';
   const FOLLOWING_QUERY_HASH = 'd04b0a864b4b54837c0d870b0e77e076';
@@ -38,74 +21,56 @@
   // LocalStorage Anahtarları
   const STORAGE_WHITELIST = 'ig_fc_whitelist_v5';
   const STORAGE_SNAPSHOT = 'ig_fc_snapshot_v5';
+  const STORAGE_SCAN_HISTORY = 'ig_fc_scan_history_v7';
   const STORAGE_UNFOLLOW_LOG = 'ig_fc_unfollow_log_v5';
   const STORAGE_LAST_SCAN = 'ig_fc_last_scan_v6';
   const STORAGE_USER_NOTES = 'ig_fc_user_notes_v8';
+  const STORAGE_USER_TAGS = 'ig_fc_user_tags_v10';
+  const STORAGE_FAVORITES = 'ig_fc_favorites_v11';
   const STORAGE_SETTINGS = 'ig_fc_settings_v10';
   const STORAGE_DAILY_QUOTA = 'ig_fc_daily_quota_v9';
 
-  // Sürüm Geçmişi (Changelog) Verisi
-  const CHANGELOG_HISTORY = [
-    {
-      version: 'v10 Pro (Güncel Sürüm)',
-      date: 'Ekim 2026',
-      badge: 'Kusursuz Tasarım',
-      items: [
-        'Pencere küçültüldüğünde veya daraltıldığında üst bardaki butonların ve sağdaki istatistik kartlarının ekran dışına taşması tamamen giderildi (Tam Responsive Header & Grid).',
-        'Sekme butonları sayı rozetli modern Segmented Bar tasarımına kavuşturuldu; "Tümünü Seç / Tersini Seç / Temizle" butonları birleşik kapsül (Pill Toolbar) haline getirildi.',
-        'İlk açılışta Tarayıcı / Sistem Temasını (Açık Mod veya Koyu Mod) otomatik algılayan dinamik tema motoru eklendi.',
-        'Toplu Kullanıcı Adı ile Koruma Ekleme ve Akıllı Temizlik Sihirbazı araçları eklendi.',
-      ],
+  // Hız Modu Yapılandırması
+  const SPEED_CONFIGS = {
+    safe: {
+      label: '🛡️ Güvenli Mod',
+      scanDelayMin: 1200,
+      scanDelayMax: 2400,
+      actionDelayMin: 4000,
+      actionDelayMax: 7500,
+      batchSize: 10,
+      batchPauseSec: 45,
     },
-    {
-      version: 'v9 Pro Ultimate',
-      date: 'Ekim 2026',
-      badge: 'Ultimate',
-      items: [
-        'Canlı Profil Detay Kartı (🔍): Sayfadan ayrılmadan kullanıcının biyografisini, takipçi/takip/gönderi sayılarını ve hesap detaylarını görüntüleme eklendi.',
-        'Akıllı Şüpheli / Bot / İnaktif Hesap Tespiti (👻): Profil resmi olmayan, isimsiz veya çok rakamlı kullanıcı adına sahip hesapları otomatik tespit eden algoritma ve sekme eklendi.',
-        'Anti-Ban Otomatik Soğuma Molası & Günlük Kota Takibi: Toplu işlemde her 10 işlemde bir otomatik dinlenme molası ve günlük işlem sayacı eklendi.',
-      ],
+    normal: {
+      label: '⚖️ Dengeli Mod',
+      scanDelayMin: 650,
+      scanDelayMax: 1400,
+      actionDelayMin: 2200,
+      actionDelayMax: 4200,
+      batchSize: 15,
+      batchPauseSec: 25,
     },
-    {
-      version: 'v8 Pro',
-      date: 'Ekim 2026',
-      badge: 'Pencere & Analiz',
-      items: [
-        'Küçültme (Minimize) modunda özel "▢ Büyüt" butonu ve 8 yönlü (tüm kenar ve köşelerden) fareyle boyutlandırma eklendi.',
-        'Sürüm Geçmişi (Changelog) penceresi, Hesap Analiz Raporu (📊) ve kullanıcılara özel Not Ekleme (📝) özellikleri eklendi.',
-      ],
+    fast: {
+      label: '⚡ Hızlı Mod',
+      scanDelayMin: 250,
+      scanDelayMax: 650,
+      actionDelayMin: 1100,
+      actionDelayMax: 2200,
+      batchSize: 25,
+      batchPauseSec: 15,
     },
-    {
-      version: 'v5 — v7 Pro',
-      date: 'Ekim 2026',
-      badge: 'Pro Özellikler',
-      items: [
-        'Kırık profil resimleri için crossOrigin + Blob yükleyici ve renkli SVG Baş Harf Avatar yedeği eklendi.',
-        'Tam genişlikte 14px ilerleme çubuğu, A-/A+ ölçeklendirme ve Snapshot karşılaştırma eklendi.',
-      ],
+    ultra: {
+      label: '🐢 Ultra Güvenli Mod',
+      scanDelayMin: 1800,
+      scanDelayMax: 3500,
+      actionDelayMin: 6000,
+      actionDelayMax: 11000,
+      batchSize: 8,
+      batchPauseSec: 60,
     },
-    {
-      version: 'v1 — v4',
-      date: 'Ekim 2026',
-      badge: '429 & 404 Çözümü',
-      items: [
-        'Instagram tarafından kapatılan web_profile_info (429) ve eski arama/feed (404) uç noktaları kaldırılıp ds_user_id, data-sjs ve GraphQL/REST v1 yedekli mimari kuruldu.',
-      ],
-    },
-  ];
-
-  // Hız Profilleri
-  const SPEED_PROFILES = {
-    fast: { min: 2000, max: 3800, batchPauseEvery: 15, batchPauseSec: 20, label: 'Hızlı (2-4 sn)' },
-    safe: { min: 4000, max: 7000, batchPauseEvery: 10, batchPauseSec: 30, label: 'Güvenli (4-7 sn + Mola)' },
-    ultra: { min: 7000, max: 12000, batchPauseEvery: 8, batchPauseSec: 45, label: 'Çok Güvenli (7-12 sn)' },
   };
 
-  // Kayıtlı Ayarları Yükle (Varsayılan tema: 'system' -> Tarayıcı teması)
-  const savedSettings = JSON.parse(localStorage.getItem(STORAGE_SETTINGS) || '{}');
-
-  // Durum (State)
+  // Uygulama Durumu (State)
   const state = {
     isRunning: false,
     isBulkRunning: false,
@@ -122,91 +87,122 @@
     suspicious: [],
     lostFollowers: [],
     newFollowers: [],
-    whitelist: new Set(JSON.parse(localStorage.getItem(STORAGE_WHITELIST) || '[]')),
-    unfollowHistory: JSON.parse(localStorage.getItem(STORAGE_UNFOLLOW_LOG) || '[]'),
-    userNotes: JSON.parse(localStorage.getItem(STORAGE_USER_NOTES) || '{}'),
+    whitelist: new Set(),
+    favorites: new Set(),
+    unfollowHistory: [],
+    scanHistory: [],
+    userNotes: {},
+    userTags: {},
+    lang: 'tr',
     selectedIds: new Set(),
     lastClickedIndex: -1,
     activeTab: 'nonFollowers',
     searchQuery: '',
     filterType: 'all',
     sortBy: 'default',
-    viewMode: savedSettings.viewMode || 'grid',
-    speedMode: savedSettings.speedMode || 'safe',
-    theme: savedSettings.theme || 'system', // system (Tarayıcı Teması) | light | midnight | oled | cyber | sunset
-    autoCooldown: savedSettings.autoCooldown !== false,
+    viewMode: 'grid',
+    speedMode: 'normal',
+    theme: 'system',
+    autoCooldown: true,
+    dailyLimitMax: 150,
     isMaximized: false,
     isMinimized: false,
     savedBounds: null,
-    uiScale: savedSettings.uiScale || 100,
+    uiScale: 100,
     isLogOpen: false,
     avatarBlobCache: new Map(),
     profileDetailsCache: new Map(),
   };
 
-  // Yardımcı Fonksiyonlar
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  const randomDelay = (min = 700, max = 1400) =>
-    sleep(Math.floor(Math.random() * (max - min + 1)) + min);
+  // ============================================================================
+  // YARDIMCI FONKSİYONLAR & LOCALSTORAGE YÖNETİMİ
+  // ============================================================================
 
-  /**
-   * Tarayıcının / Sistemin aktif temasını algılar (Light vs Dark)
-   */
-  function resolveEffectiveTheme(themePref) {
-    if (themePref && themePref !== 'system') return themePref;
-    const igIsDark =
-      document.documentElement.classList.contains('_aa4d') ||
-      getComputedStyle(document.body).backgroundColor === 'rgb(0, 0, 0)';
-    const browserPrefersLight =
-      window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
-    if (browserPrefersLight && !igIsDark) {
-      return 'light';
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const randomBetween = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+  function getRateLimitDelay(mode = 'scan') {
+    const cfg = SPEED_CONFIGS[state.speedMode] || SPEED_CONFIGS.normal;
+    if (mode === 'action') {
+      return randomBetween(cfg.actionDelayMin, cfg.actionDelayMax);
     }
-    return 'midnight';
+    return randomBetween(cfg.scanDelayMin, cfg.scanDelayMax);
   }
 
-  function saveSettings() {
-    try {
-      localStorage.setItem(
-        STORAGE_SETTINGS,
-        JSON.stringify({
-          viewMode: state.viewMode,
-          speedMode: state.speedMode,
-          theme: state.theme,
-          autoCooldown: state.autoCooldown,
-          uiScale: state.uiScale,
-        })
-      );
-    } catch (_) {}
+  function getTodayKey() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }
 
   function getTodayQuota() {
-    const today = new Date().toISOString().slice(0, 10);
     try {
-      const raw = JSON.parse(localStorage.getItem(STORAGE_DAILY_QUOTA) || '{}');
-      if (raw.date === today) return raw.count || 0;
+      const raw = localStorage.getItem(STORAGE_DAILY_QUOTA);
+      if (!raw) return 0;
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.date === getTodayKey()) {
+        return Number(parsed.count) || 0;
+      }
     } catch (_) {}
     return 0;
   }
 
   function incrementTodayQuota() {
-    const today = new Date().toISOString().slice(0, 10);
-    const next = getTodayQuota() + 1;
     try {
-      localStorage.setItem(STORAGE_DAILY_QUOTA, JSON.stringify({ date: today, count: next }));
+      const current = getTodayQuota() + 1;
+      localStorage.setItem(
+        STORAGE_DAILY_QUOTA,
+        JSON.stringify({ date: getTodayKey(), count: current })
+      );
+      updateQuotaBadgeUI();
+      return current;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  function resetTodayQuota() {
+    try {
+      localStorage.setItem(
+        STORAGE_DAILY_QUOTA,
+        JSON.stringify({ date: getTodayKey(), count: 0 })
+      );
+      updateQuotaBadgeUI();
     } catch (_) {}
-    const el = document.getElementById('igfc-quota-badge');
-    if (el) el.textContent = `Bugün: ${next} işlem`;
-    return next;
+  }
+
+  function updateQuotaBadgeUI() {
+    const badge = document.getElementById('igfc-quota-badge');
+    if (!badge) return;
+    const count = getTodayQuota();
+    const max = state.dailyLimitMax || 150;
+    badge.textContent = `Günlük Kota: ${count}/${max}`;
+    badge.classList.toggle('warning', count >= Math.floor(max * 0.55) && count < Math.floor(max * 0.85));
+    badge.classList.toggle('danger', count >= Math.floor(max * 0.85));
   }
 
   function getCookie(name) {
-    const match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
-    return match ? decodeURIComponent(match[1]) : null;
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+    return '';
   }
 
-  function getCsrfToken() {
+  function getAppCSRFToken() {
     return getCookie('csrftoken') || '';
+  }
+  const getCsrfToken = getAppCSRFToken;
+
+  function getAppIGAppID() {
+    return IG_APP_ID;
+  }
+
+  function getAppHeaders(extra = {}) {
+    return {
+      'X-IG-App-ID': getAppIGAppID(),
+      'X-CSRFToken': getAppCSRFToken(),
+      'X-Requested-With': 'XMLHttpRequest',
+      ...extra,
+    };
   }
 
   function getDefaultUsername() {
@@ -229,33 +225,392 @@
     return '';
   }
 
-  function saveWhitelist() {
-    localStorage.setItem(STORAGE_WHITELIST, JSON.stringify([...state.whitelist]));
-  }
-
-  function saveUserNotes() {
-    localStorage.setItem(STORAGE_USER_NOTES, JSON.stringify(state.userNotes));
-  }
-
-  function saveUnfollowHistory() {
-    localStorage.setItem(
-      STORAGE_UNFOLLOW_LOG,
-      JSON.stringify(state.unfollowHistory.slice(0, 500))
-    );
-  }
-
-  function saveLastScanCache() {
+  function getWhitelist() {
     try {
-      const payload = {
+      const raw = localStorage.getItem(STORAGE_WHITELIST);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          state.whitelist = new Set(arr.map(String));
+        }
+      }
+    } catch (_) {}
+    return state.whitelist;
+  }
+  const loadWhitelist = getWhitelist;
+
+  function saveWhitelist(customList) {
+    try {
+      if (customList instanceof Set) state.whitelist = customList;
+      else if (Array.isArray(customList)) state.whitelist = new Set(customList.map(String));
+      localStorage.setItem(STORAGE_WHITELIST, JSON.stringify([...state.whitelist]));
+    } catch (_) {}
+  }
+
+  function isWhitelisted(userId) {
+    return state.whitelist.has(String(userId));
+  }
+
+  function toggleWhitelist(userId) {
+    const uid = String(userId);
+    if (state.whitelist.has(uid)) {
+      state.whitelist.delete(uid);
+      state.selectedIds.delete(uid);
+    } else {
+      state.whitelist.add(uid);
+      state.selectedIds.delete(uid);
+    }
+    saveWhitelist();
+    updateStatsUI();
+    updateBulkButtons();
+    return state.whitelist.has(uid);
+  }
+
+  function getNotes() {
+    try {
+      const raw = localStorage.getItem(STORAGE_USER_NOTES);
+      if (raw) {
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === 'object') {
+          state.userNotes = obj;
+        }
+      }
+    } catch (_) {}
+    return state.userNotes;
+  }
+  const loadUserNotes = getNotes;
+
+  function saveNotes(customNotes) {
+    try {
+      if (customNotes && typeof customNotes === 'object') {
+        state.userNotes = customNotes;
+      }
+      localStorage.setItem(STORAGE_USER_NOTES, JSON.stringify(state.userNotes));
+    } catch (_) {}
+  }
+  const saveUserNotes = saveNotes;
+
+  function getUserNote(userId) {
+    return state.userNotes[String(userId)] || '';
+  }
+
+  function setUserNote(userId, note) {
+    const uid = String(userId);
+    const trimmed = String(note || '').trim();
+    if (trimmed) state.userNotes[uid] = trimmed;
+    else delete state.userNotes[uid];
+    saveNotes();
+  }
+
+  function loadUserTags() {
+    try {
+      const raw = localStorage.getItem(STORAGE_USER_TAGS);
+      if (raw) {
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === 'object') state.userTags = obj;
+      }
+    } catch (_) {}
+    return state.userTags;
+  }
+
+  function saveUserTags() {
+    try {
+      localStorage.setItem(STORAGE_USER_TAGS, JSON.stringify(state.userTags));
+    } catch (_) {}
+  }
+
+  function getUserTag(userId) {
+    return state.userTags[String(userId)] || '';
+  }
+
+  function setUserTag(userId, tag) {
+    const uid = String(userId);
+    const trimmed = String(tag || '').trim();
+    if (trimmed) state.userTags[uid] = trimmed;
+    else delete state.userTags[uid];
+    saveUserTags();
+  }
+
+  function loadFavorites() {
+    try {
+      const raw = localStorage.getItem(STORAGE_FAVORITES);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) state.favorites = new Set(arr.map(String));
+      }
+    } catch (_) {}
+    return state.favorites;
+  }
+
+  function saveFavorites() {
+    try {
+      localStorage.setItem(STORAGE_FAVORITES, JSON.stringify([...state.favorites]));
+    } catch (_) {}
+  }
+
+  function isFavorite(userId) {
+    return state.favorites.has(String(userId));
+  }
+
+  function toggleFavorite(userId) {
+    const uid = String(userId);
+    if (state.favorites.has(uid)) state.favorites.delete(uid);
+    else state.favorites.add(uid);
+    saveFavorites();
+    updateStatsUI();
+    return state.favorites.has(uid);
+  }
+
+  function computeAccountHealth() {
+    const flw = state.followers.length;
+    const flwing = state.following.length;
+    if (flw === 0 && flwing === 0) {
+      return { score: 0, grade: '-', summary: 'Henüz veri yok' };
+    }
+    const mutualRatio = flwing > 0 ? state.mutuals.length / flwing : 0;
+    const nonFollowRatio = flwing > 0 ? state.nonFollowers.length / flwing : 0;
+    const suspRatio = flwing > 0 ? state.suspicious.length / flwing : 0;
+    const balanceBonus = flw >= flwing ? 20 : Math.max(0, Math.round((flw / Math.max(1, flwing)) * 20));
+
+    let score = Math.round(mutualRatio * 60 + (1 - nonFollowRatio) * 20 + balanceBonus - suspRatio * 25);
+    score = Math.max(5, Math.min(100, score));
+
+    let grade = 'C';
+    if (score >= 90) grade = 'A+';
+    else if (score >= 80) grade = 'A';
+    else if (score >= 70) grade = 'B';
+    else if (score >= 55) grade = 'C';
+    else grade = 'D';
+
+    let summary = 'Dengeli Hesap';
+    if (score >= 85) summary = 'Mükemmel Etkileşim & Sadakat';
+    else if (score >= 70) summary = 'İyi Takip Dengesi';
+    else if (nonFollowRatio > 0.45) summary = 'Yüksek Geri Takip Etmeyen Oranı';
+
+    return { score, grade, summary };
+  }
+
+  function exportSummaryReportTxt() {
+    const health = computeAccountHealth();
+    const lines = [
+      '====================================================',
+      `INSTAGRAM FOLLOW CHECKER PRO - HESAP ANALİZ RAPORU`,
+      '====================================================',
+      `Hesap: @${state.username || 'belirtilmedi'}`,
+      `Rapor Tarihi: ${new Date().toLocaleString('tr-TR')}`,
+      `Hesap Sağlık Puanı: ${health.score}/100 (${health.grade}) - ${health.summary}`,
+      '',
+      '--- ÖZET İSTATİSTİKLER ---',
+      `• Tüm Takipçiler: ${state.followers.length}`,
+      `• Tüm Takip Edilenler: ${state.following.length}`,
+      `• Karşılıklı Takipleşilenler: ${state.mutuals.length}`,
+      `• Seni Geri Takip Etmeyenler: ${state.nonFollowers.length}`,
+      `• Senin Takip Etmediklerin (Hayranlar): ${state.fans.length}`,
+      `• Şüpheli / Bot Görünümlü Hesaplar: ${state.suspicious.length}`,
+      `• Son Taramadan Beri Takipten Çıkanlar: ${state.lostFollowers.length}`,
+      `• Son Taramadan Beri Yeni Gelenler: ${state.newFollowers.length}`,
+      `• Koruma Listesi (Whitelist): ${state.whitelist.size}`,
+      `• Favoriler: ${state.favorites.size}`,
+      '',
+      `--- GERİ TAKİP ETMEYENLER (${state.nonFollowers.length}) ---`,
+      ...state.nonFollowers.map((u, i) => `${i + 1}. @${u.username} (${u.full_name || '-'})`),
+      '',
+      `--- SON TARAMADAN BERİ TAKİPTEN ÇIKANLAR (${state.lostFollowers.length}) ---`,
+      ...state.lostFollowers.map((u, i) => `${i + 1}. @${u.username} (${u.full_name || '-'})`),
+    ];
+    const blob = new Blob([lines.join(String.fromCharCode(10))], { type: 'text/plain;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `instagram-analiz-raporu-${state.username || 'hesap'}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Detaylı TXT analiz raporu indirildi.', 'success');
+  }
+
+  function importOfficialJsonFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+
+    let importedFollowers = [];
+    let importedFollowing = [];
+
+    const parseOfficialStructure = (parsed, fname) => {
+      const extractArr = (arr, target) => {
+        arr.forEach((item, idx) => {
+          const sld = item?.string_list_data?.[0];
+          const uname = sld?.value || item?.username || item?.title || '';
+          if (!uname) return;
+          const cleanUname = String(uname).replace(/^@/, '').trim();
+          target.push({
+            id: String(item?.id || item?.pk || cleanUname),
+            username: cleanUname,
+            full_name: item?.full_name || '',
+            profile_pic_url: item?.profile_pic_url || '',
+            is_verified: Boolean(item?.is_verified),
+            is_private: Boolean(item?.is_private),
+            followOrderIndex: idx,
+          });
+        });
+      };
+
+      if (Array.isArray(parsed)) {
+        if (fname.includes('following')) extractArr(parsed, importedFollowing);
+        else extractArr(parsed, importedFollowers);
+      } else if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.relationships_following)) extractArr(parsed.relationships_following, importedFollowing);
+        if (Array.isArray(parsed.relationships_followers)) extractArr(parsed.relationships_followers, importedFollowers);
+        if (Array.isArray(parsed.following)) extractArr(parsed.following, importedFollowing);
+        if (Array.isArray(parsed.followers)) extractArr(parsed.followers, importedFollowers);
+      }
+    };
+
+    Promise.all(
+      files.map(async (file) => {
+        try {
+          const txt = await file.text();
+          const parsed = JSON.parse(txt);
+          parseOfficialStructure(parsed, file.name.toLowerCase());
+        } catch (_) {
+          showToast(`${file.name} okunamadı!`, 'error');
+        }
+      })
+    ).then(() => {
+      if (importedFollowers.length > 0) state.followers = importedFollowers;
+      if (importedFollowing.length > 0) state.following = importedFollowing;
+      if (importedFollowers.length === 0 && importedFollowing.length === 0) {
+        showToast('Seçilen JSON dosyasında takipçi veya takip edilen verisi bulunamadı.', 'warning');
+        return;
+      }
+      state.lastScannedAt = new Date().toISOString();
+      if (!state.username) state.username = getDefaultUsername() || 'json_import';
+      computeCategories();
+      saveLastScanCache();
+      renderList();
+      updateStatus(`JSON İçe Aktarıldı! Takipçi: ${state.followers.length} | Takip Edilen: ${state.following.length}`);
+      showToast(`JSON yüklendi: ${state.followers.length} takipçi, ${state.following.length} takip edilen.`, 'success');
+    });
+  }
+
+  function loadUnfollowHistory() {
+    try {
+      const raw = localStorage.getItem(STORAGE_UNFOLLOW_LOG);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          state.unfollowHistory = arr;
+        }
+      }
+    } catch (_) {}
+  }
+
+  function saveUnfollowHistory(user, actionType = 'unfollow') {
+    try {
+      const entry = {
+        id: String(user.id),
+        username: user.username,
+        full_name: user.full_name || '',
+        profile_pic_url: user.profile_pic_url || '',
+        is_verified: Boolean(user.is_verified),
+        is_private: Boolean(user.is_private),
+        actionType,
+        timestamp: new Date().toISOString(),
+      };
+      state.unfollowHistory.unshift(entry);
+      if (state.unfollowHistory.length > 500) {
+        state.unfollowHistory.length = 500;
+      }
+      localStorage.setItem(STORAGE_UNFOLLOW_LOG, JSON.stringify(state.unfollowHistory));
+    } catch (_) {}
+  }
+
+  function getScanHistory() {
+    try {
+      const raw = localStorage.getItem(STORAGE_SCAN_HISTORY);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          state.scanHistory = arr;
+        }
+      }
+    } catch (_) {}
+    return state.scanHistory;
+  }
+
+  function saveScanHistory(entry) {
+    try {
+      getScanHistory();
+      const snapshotEntry = entry || {
+        id: `${state.userId || state.username}_${Date.now()}`,
         username: state.username,
         userId: state.userId,
-        lastScannedAt: state.lastScannedAt,
-        followers: state.followers,
-        following: state.following,
-        lostFollowers: state.lostFollowers,
-        newFollowers: state.newFollowers,
+        timestamp: new Date().toISOString(),
+        followersCount: state.followers.length,
+        followingCount: state.following.length,
+        nonFollowersCount: state.nonFollowers.length,
+        followers: state.followers.map((u) => ({
+          id: String(u.id),
+          username: u.username,
+          full_name: u.full_name,
+          profile_pic_url: u.profile_pic_url,
+          is_verified: Boolean(u.is_verified),
+          is_private: Boolean(u.is_private),
+        })),
+        following: state.following.map((u) => ({
+          id: String(u.id),
+          username: u.username,
+          full_name: u.full_name,
+          profile_pic_url: u.profile_pic_url,
+          is_verified: Boolean(u.is_verified),
+          is_private: Boolean(u.is_private),
+        })),
       };
-      localStorage.setItem(STORAGE_LAST_SCAN, JSON.stringify(payload));
+      state.scanHistory.unshift(snapshotEntry);
+      if (state.scanHistory.length > 15) {
+        state.scanHistory.length = 15;
+      }
+      localStorage.setItem(STORAGE_SCAN_HISTORY, JSON.stringify(state.scanHistory));
+    } catch (_) {}
+  }
+
+  function clearScanHistory() {
+    try {
+      state.scanHistory = [];
+      localStorage.removeItem(STORAGE_SCAN_HISTORY);
+      localStorage.removeItem(STORAGE_SNAPSHOT);
+      showToast('Tarama geçmişi ve anlık görüntüler temizlendi.', 'info');
+    } catch (_) {}
+  }
+
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(STORAGE_SETTINGS);
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      if (s && typeof s === 'object') {
+        if (s.viewMode) state.viewMode = s.viewMode;
+        if (s.speedMode && SPEED_CONFIGS[s.speedMode]) state.speedMode = s.speedMode;
+        if (s.theme) state.theme = s.theme;
+        if (typeof s.autoCooldown === 'boolean') state.autoCooldown = s.autoCooldown;
+        if (typeof s.dailyLimitMax === 'number') state.dailyLimitMax = Math.max(20, s.dailyLimitMax);
+        if (typeof s.uiScale === 'number') state.uiScale = Math.min(125, Math.max(75, s.uiScale));
+      }
+    } catch (_) {}
+  }
+
+  function saveSettings() {
+    try {
+      localStorage.setItem(
+        STORAGE_SETTINGS,
+        JSON.stringify({
+          viewMode: state.viewMode,
+          speedMode: state.speedMode,
+          theme: state.theme,
+          autoCooldown: state.autoCooldown,
+          dailyLimitMax: state.dailyLimitMax,
+          uiScale: state.uiScale,
+        })
+      );
     } catch (_) {}
   }
 
@@ -278,2244 +633,2470 @@
     return false;
   }
 
+  function saveLastScanCache() {
+    try {
+      const payload = {
+        username: state.username,
+        userId: state.userId,
+        lastScannedAt: state.lastScannedAt,
+        followers: state.followers,
+        following: state.following,
+        lostFollowers: state.lostFollowers,
+        newFollowers: state.newFollowers,
+      };
+      localStorage.setItem(STORAGE_LAST_SCAN, JSON.stringify(payload));
+      updateCacheInfoUI();
+    } catch (_) {}
+  }
+
+  function clearScanCache() {
+    try {
+      localStorage.removeItem(STORAGE_LAST_SCAN);
+      state.lastScannedAt = null;
+      updateCacheInfoUI();
+      showToast('Son taranan kişi önbellek kaydı temizlendi.', 'info');
+      addLog('Son tarama önbelleği (STORAGE_LAST_SCAN) temizlendi.', 'info');
+    } catch (_) {}
+  }
+  const clearLastScanCache = clearScanCache;
+
   function escapeHtml(str) {
-    return String(str || '')
+    if (!str) return '';
+    return String(str)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+      .replace(/'/g, '&#039;');
   }
 
-  function computeSuspicionInfo(user, isNonFollower) {
+  // ============================================================================
+  // ŞÜPHELİ / BOT HESAP PUANLAMA VE AVATAR YÜKLEYİCİ
+  // ============================================================================
+
+  function computeSuspicionInfo(user, isNonFollower = false) {
+    if (user.is_verified) {
+      return { score: 0, isSuspicious: false, reasons: [] };
+    }
     let score = 0;
     const reasons = [];
+    const picUrl = String(user.profile_pic_url || '');
     const uname = String(user.username || '');
-    const fname = String(user.full_name || '').trim();
-    const pic = String(user.profile_pic_url || '');
+    const fullName = String(user.full_name || '').trim();
 
     if (
-      !pic ||
-      pic.includes('44884218_345707102882519') ||
-      pic.includes('default_profile') ||
-      pic.includes('anonymous')
+      !picUrl ||
+      picUrl.includes('44884218_345707102882519') ||
+      picUrl.includes('default_profile') ||
+      picUrl.includes('anonymous')
     ) {
       score += 45;
       reasons.push('Profil resmi yok');
     }
 
-    const digitCount = (uname.match(/\d/g) || []).length;
-    if (digitCount >= 4) {
+    const digits = uname.match(/\d/g);
+    if (digits && digits.length >= 4) {
       score += 25;
       reasons.push('Çok rakamlı kullanıcı adı');
     }
 
-    if (!fname) {
+    if (!fullName) {
       score += 20;
       reasons.push('İsim alanı boş');
     }
 
-    if (isNonFollower && !user.is_verified) {
+    if (isNonFollower) {
       score += 15;
+      reasons.push('Geri takip etmiyor');
     }
 
-    if (user.is_verified) {
-      score = 0;
-      reasons.length = 0;
-    }
-
+    const finalScore = Math.min(100, score);
     return {
-      score: Math.min(100, score),
-      isSuspicious: score >= 45,
+      score: finalScore,
+      isSuspicious: finalScore >= 45,
       reasons,
     };
   }
 
-  function generateSvgAvatar(username, fullName) {
-    const label = (fullName || username || '?').trim().replace(/^@/, '');
-    const parts = label.split(/\s+/).filter(Boolean);
-    const initials =
-      parts.length >= 2
-        ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-        : label.slice(0, 2).toUpperCase();
+  function calculateSuspiciousScore(user) {
+    return computeSuspicionInfo(user, true).score;
+  }
 
-    const palettes = [
-      ['#6366f1', '#a855f7'],
-      ['#ec4899', '#f43f5e'],
-      ['#3b82f6', '#06b6d4'],
-      ['#10b981', '#059669'],
-      ['#f59e0b', '#ef4444'],
-      ['#8b5cf6', '#ec4899'],
-      ['#14b8a6', '#3b82f6'],
-    ];
+  function generateSvgAvatar(username, fullName = '') {
+    const label = (fullName || username || 'IG').trim().slice(0, 2).toUpperCase();
+    const colors = ['#6366f1', '#ec4899', '#10b981', '#f59e0b', '#3b82f6', '#8b5cf6'];
     let hash = 0;
     for (let i = 0; i < (username || '').length; i++) {
       hash = username.charCodeAt(i) + ((hash << 5) - hash);
     }
-    const [c1, c2] = palettes[Math.abs(hash) % palettes.length];
-
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="80" height="80">
-      <defs>
-        <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="${c1}"/>
-          <stop offset="100%" stop-color="${c2}"/>
-        </linearGradient>
-      </defs>
-      <rect width="80" height="80" rx="40" fill="url(#g)"/>
-      <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-size="28" font-weight="700">${escapeHtml(
-        initials
-      )}</text>
+    const bg = colors[Math.abs(hash) % colors.length];
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80">
+      <rect width="80" height="80" rx="40" fill="${bg}"/>
+      <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="28" font-weight="700">${escapeHtml(label)}</text>
     </svg>`;
-
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
   }
 
-  async function hydrateAvatarImage(imgEl, picUrl, username, fullName) {
-    const fallbackSvg = generateSvgAvatar(username, fullName);
+  function hydrateAvatarImage(imgEl, user) {
+    if (!imgEl || !user) return;
+    const fallbackSvg = generateSvgAvatar(user.username, user.full_name);
+    const picUrl = user.profile_pic_url;
     if (!picUrl) {
       imgEl.src = fallbackSvg;
       return;
     }
-
     if (state.avatarBlobCache.has(picUrl)) {
       imgEl.src = state.avatarBlobCache.get(picUrl);
       return;
     }
 
+    imgEl.crossOrigin = 'anonymous';
+    imgEl.referrerPolicy = 'no-referrer';
     imgEl.onerror = async () => {
       imgEl.onerror = null;
       try {
         const res = await fetch(picUrl, { mode: 'cors', credentials: 'omit' });
-        if (res.ok) {
-          const blob = await res.blob();
-          const objectUrl = URL.createObjectURL(blob);
-          state.avatarBlobCache.set(picUrl, objectUrl);
-          imgEl.src = objectUrl;
-          return;
-        }
-      } catch (_) {}
-      imgEl.src = fallbackSvg;
+        if (!res.ok) throw new Error('Avatar fetch failed');
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        state.avatarBlobCache.set(picUrl, blobUrl);
+        imgEl.src = blobUrl;
+      } catch (_) {
+        imgEl.src = fallbackSvg;
+      }
     };
-
-    imgEl.crossOrigin = 'anonymous';
     imgEl.src = picUrl;
   }
 
-  function showToast(message, type = 'info') {
-    const container = document.getElementById('igfc-toast-container');
-    if (!container) return;
-    const toast = document.createElement('div');
-    toast.className = `igfc-toast igfc-toast-${type}`;
-    toast.textContent = message;
-    container.appendChild(toast);
-    setTimeout(() => {
-      toast.style.opacity = '0';
-      toast.style.transform = 'translateY(8px)';
-      setTimeout(() => toast.remove(), 250);
-    }, 3200);
-  }
+  // ============================================================================
+  // DOM & SCRIPT ÜZERİNDEN KULLANICI ÇÖZÜMLEME
+  // ============================================================================
 
-  function addLog(message, type = 'info') {
-    const logContainer = document.getElementById('igfc-log-list');
-    const lastLogPreview = document.getElementById('igfc-last-log-preview');
-    const time = new Date().toLocaleTimeString('tr-TR');
-    if (lastLogPreview) {
-      lastLogPreview.textContent = `[${time}] ${message}`;
+  function getLoggedInViewerFromDOM() {
+    const cookieMatch = document.cookie.match(/ds_user_id=([^;]+)/);
+    const viewerId = cookieMatch ? cookieMatch[1].trim() : '';
+    if (!viewerId) return null;
+
+    const escapedId = viewerId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const patterns = [
+      new RegExp(`"id"\\s*:\\s*"${escapedId}"[^}]{0,400}?"username"\\s*:\\s*"([^"]+)"`),
+      new RegExp(`"username"\\s*:\\s*"([^"]+)"[^}]{0,400}?"id"\\s*:\\s*"${escapedId}"`),
+      new RegExp(`"pk"\\s*:\\s*"${escapedId}"[^}]{0,400}?"username"\\s*:\\s*"([^"]+)"`),
+    ];
+
+    const scripts = Array.from(document.querySelectorAll('script'));
+    for (const s of scripts) {
+      const text = s.textContent || '';
+      if (!text.includes(viewerId)) continue;
+      for (const rgx of patterns) {
+        const m = text.match(rgx);
+        if (m && m[1]) {
+          return { id: viewerId, username: m[1] };
+        }
+      }
     }
-    if (!logContainer) return;
-    const item = document.createElement('div');
-    item.className = `igfc-log-item igfc-log-${type}`;
-    item.textContent = `[${time}] ${message}`;
-    logContainer.prepend(item);
+    return { id: viewerId, username: getDefaultUsername() };
   }
 
   function findStrictUserInJson(obj, targetUsername) {
     if (!obj || typeof obj !== 'object') return null;
-
-    if (obj.xig_user_by_username && typeof obj.xig_user_by_username === 'object') {
-      const u = obj.xig_user_by_username;
-      if (
-        (u.id || u.pk) &&
-        (!targetUsername || String(u.username || '').toLowerCase() === targetUsername.toLowerCase())
-      ) {
-        return u;
-      }
-    }
-
     if (
-      obj.username &&
-      (obj.id || obj.pk) &&
-      (!targetUsername || String(obj.username).toLowerCase() === targetUsername.toLowerCase()) &&
-      (typeof obj.follower_count === 'number' ||
-        typeof obj.following_count === 'number' ||
-        obj.edge_followed_by?.count !== undefined ||
-        obj.edge_follow?.count !== undefined)
+      typeof obj.username === 'string' &&
+      obj.username.toLowerCase() === targetUsername.toLowerCase() &&
+      (obj.id || obj.pk)
     ) {
-      return obj;
+      return {
+        id: String(obj.id || obj.pk),
+        username: obj.username,
+        fullName: obj.full_name || '',
+        profilePicUrl: obj.profile_pic_url_hd || obj.profile_pic_url || '',
+        followerCount: obj.edge_followed_by?.count ?? obj.follower_count ?? null,
+        followingCount: obj.edge_follow?.count ?? obj.following_count ?? null,
+        mediaCount: obj.edge_owner_to_timeline_media?.count ?? obj.media_count ?? null,
+        isVerified: Boolean(obj.is_verified),
+        isPrivate: Boolean(obj.is_private),
+        biography: obj.biography || '',
+        externalUrl: obj.external_url || '',
+      };
     }
-
     for (const key of Object.keys(obj)) {
-      const val = obj[key];
-      if (val && typeof val === 'object') {
-        const found = findStrictUserInJson(val, targetUsername);
-        if (found) return found;
-      }
+      const found = findStrictUserInJson(obj[key], targetUsername);
+      if (found) return found;
     }
     return null;
   }
 
-  function getLoggedInViewerFromDOM() {
-    const cookieId = getCookie('ds_user_id');
-    const html = document.documentElement.innerHTML;
-
-    if (cookieId) {
-      const escapedId = cookieId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const viewerMatch =
-        html.match(
-          new RegExp(`"id"\\s*:\\s*"${escapedId}"[^}]{0,400}?"username"\\s*:\\s*"([^"]+)"`)
-        ) ||
-        html.match(
-          new RegExp(`"username"\\s*:\\s*"([^"]+)"[^}]{0,400}?"id"\\s*:\\s*"${escapedId}"`)
-        ) ||
-        html.match(
-          new RegExp(`"pk"\\s*:\\s*"?${escapedId}"?[^}]{0,400}?"username"\\s*:\\s*"([^"]+)"`)
-        );
-
-      if (viewerMatch && viewerMatch[1]) {
-        return { id: String(cookieId), username: viewerMatch[1] };
+  function extractStrictProfileFromScripts(targetUsername) {
+    if (!targetUsername) return null;
+    const scripts = Array.from(document.querySelectorAll('script'));
+    for (const s of scripts) {
+      const txt = (s.textContent || '').trim();
+      if (!txt.startsWith('{') || !txt.toLowerCase().includes(targetUsername.toLowerCase())) {
+        continue;
       }
-    }
-
-    return cookieId ? { id: String(cookieId), username: '' } : null;
-  }
-
-  function extractStrictProfileFromScripts(scriptsNodeList, targetUsername, rawHtml = '') {
-    const cleanTarget = (targetUsername || '').toLowerCase();
-
-    for (const script of scriptsNodeList) {
-      const text = script.textContent || '';
-      if (!text || !text.trim().startsWith('{')) continue;
-      if (cleanTarget && !text.toLowerCase().includes(cleanTarget)) continue;
-
       try {
-        const parsed = JSON.parse(text);
-        const found = findStrictUserInJson(parsed, cleanTarget);
-        if (found && (found.id || found.pk)) {
-          return {
-            id: String(found.id || found.pk),
-            username: found.username || targetUsername,
-            fullName: found.full_name || '',
-            biography: found.biography || '',
-            externalUrl: found.external_url || '',
-            profilePicUrl: found.profile_pic_url_hd || found.profile_pic_url || '',
-            followerCount: found.follower_count ?? found.edge_followed_by?.count ?? 0,
-            followingCount: found.following_count ?? found.edge_follow?.count ?? 0,
-            mediaCount: found.media_count ?? found.edge_owner_to_timeline_media?.count ?? 0,
-            isVerified: Boolean(found.is_verified),
-            isPrivate: Boolean(found.is_private),
-          };
-        }
+        const parsed = JSON.parse(txt);
+        const found = findStrictUserInJson(parsed, targetUsername);
+        if (found) return found;
       } catch (_) {}
     }
 
-    if (rawHtml) {
-      const profilePageMatch =
-        rawHtml.match(/"profilePage_(\d+)"/) ||
-        rawHtml.match(/instagram:\/\/user\?username=[^"&]+&amp;userid=(\d+)/);
-      if (profilePageMatch && profilePageMatch[1]) {
-        return {
-          id: String(profilePageMatch[1]),
-          username: targetUsername,
+    const html = document.documentElement.innerHTML;
+    const idMatch =
+      html.match(/profilePage_(\d+)/) ||
+      html.match(/instagram:\/\/user\?username=[^&]+&amp;userid=(\d+)/);
+    if (idMatch && idMatch[1] && getDefaultUsername().toLowerCase() === targetUsername.toLowerCase()) {
+      return {
+        id: String(idMatch[1]),
+        username: targetUsername,
+        fullName: '',
+        profilePicUrl: '',
+        followerCount: null,
+        followingCount: null,
+        mediaCount: null,
+        isVerified: false,
+        isPrivate: false,
+        biography: '',
+        externalUrl: '',
+      };
+    }
+    return null;
+  }
+
+  // ============================================================================
+  // INSTAGRAM REST & GRAPHQL API MOTORU (429 KORUMALI)
+  // ============================================================================
+
+  async function fetchWithRetry(url, options = {}, maxRetries = 4) {
+    const headers = getAppHeaders(options.headers || {});
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await fetch(url, {
+          ...options,
+          headers,
+          credentials: 'include',
+          signal: state.abortController ? state.abortController.signal : undefined,
+        });
+
+        if (res.status === 429 || res.status >= 500) {
+          if (attempt >= maxRetries) return res;
+          const waitSec = Math.pow(2, attempt + 1) * 3 + randomBetween(1, 4);
+          addLog(`⚠️ Hız sınırı (${res.status}). ${waitSec} sn bekleniyor (Deneme ${attempt + 1}/${maxRetries})...`, 'warn');
+          updateStatus(`API hız sınırı algılandı, ${waitSec} sn bekleniyor...`);
+          await sleep(waitSec * 1000);
+          continue;
+        }
+        return res;
+      } catch (err) {
+        if (err.name === 'AbortError') throw err;
+        if (attempt >= maxRetries) throw err;
+        await sleep(2000 * (attempt + 1));
+      }
+    }
+  }
+
+  // Kullanıcı Profil Bilgisi Çekme (429 Rate-Limit Korumalı: Önce DOM/Cookie/Önbellek -> GraphQL -> HTML -> REST)
+  async function resolveUserProfile(usernameInput, options = {}) {
+    const cleanUsername = String(usernameInput || '').trim().replace(/^@/, '');
+    const cookieUserId = getCookie('ds_user_id');
+    const viewer = getLoggedInViewerFromDOM();
+
+    if (!cleanUsername && cookieUserId) {
+      return {
+        id: String(cookieUserId),
+        username: viewer?.username || 'aktif_hesap',
+        fullName: '',
+        profilePicUrl: '',
+        followerCount: null,
+        followingCount: null,
+        mediaCount: null,
+        isVerified: false,
+        isPrivate: false,
+        biography: '',
+        externalUrl: '',
+      };
+    }
+
+    if (!cleanUsername) throw new Error('Geçerli bir kullanıcı adı girin.');
+
+    const lower = cleanUsername.toLowerCase();
+    if (!options.forceLiveBio && state.profileDetailsCache.has(lower)) {
+      return state.profileDetailsCache.get(lower);
+    }
+
+    // 1. ADIM (0 Ağ İsteği): Sayfa İçi DOM / Script JSON Taraması
+    const domProfile = extractStrictProfileFromScripts(cleanUsername);
+    if (domProfile && domProfile.id) {
+      state.profileDetailsCache.set(lower, domProfile);
+      if (!options.forceLiveBio || domProfile.biography || domProfile.followerCount != null) {
+        return domProfile;
+      }
+    }
+
+    // 2. ADIM (0 Ağ İsteği): Kendi Hesabımız veya Önbellekteki Son Taranan Hesap Kontrolü
+    if (!options.forceLiveBio) {
+      if (viewer && viewer.id && viewer.username && viewer.username.toLowerCase() === lower) {
+        const selfProfile = {
+          id: String(viewer.id),
+          username: viewer.username,
           fullName: '',
+          profilePicUrl: '',
+          followerCount: null,
+          followingCount: null,
+          mediaCount: null,
+          isVerified: false,
+          isPrivate: false,
           biography: '',
           externalUrl: '',
+        };
+        state.profileDetailsCache.set(lower, selfProfile);
+        return selfProfile;
+      }
+
+      if (state.userId && state.username && state.username.toLowerCase() === lower) {
+        return {
+          id: String(state.userId),
+          username: state.username,
+          fullName: '',
           profilePicUrl: '',
-          followerCount: 0,
-          followingCount: 0,
-          mediaCount: 0,
+          followerCount: state.followers?.length || null,
+          followingCount: state.following?.length || null,
+          mediaCount: null,
+          isVerified: false,
+          isPrivate: false,
+          biography: '',
+          externalUrl: '',
         };
       }
     }
 
+    // 3. ADIM: GraphQL TIMELINE_DOC_ID
+    try {
+      const variables = {
+        data: { count: 1, include_relationship_info: true },
+        username: cleanUsername,
+        __relay_internal__pv__PolarisFeedShareMenurelayprovider: false,
+      };
+      const gqlUrl = `https://www.instagram.com/graphql/query/?doc_id=${TIMELINE_DOC_ID}&variables=${encodeURIComponent(JSON.stringify(variables))}`;
+      const res = await fetchWithRetry(gqlUrl, {}, 1);
+      if (res && res.ok) {
+        const json = await res.json();
+        const edges = json?.data?.xdt_api__v1__feed__user_timeline_graphql_connection?.edges;
+        const owner = edges?.[0]?.node?.user || edges?.[0]?.node?.owner;
+        if (owner && (owner.pk || owner.id)) {
+          const profile = {
+            id: String(owner.pk || owner.id),
+            username: owner.username || cleanUsername,
+            fullName: owner.full_name || '',
+            profilePicUrl: owner.profile_pic_url || '',
+            followerCount: null,
+            followingCount: null,
+            mediaCount: null,
+            isVerified: Boolean(owner.is_verified),
+            isPrivate: Boolean(owner.is_private),
+            biography: '',
+            externalUrl: '',
+          };
+          state.profileDetailsCache.set(lower, profile);
+          if (!options.forceLiveBio) return profile;
+        }
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') throw e;
+    }
+
+    // 4. ADIM: Profil HTML Sayfasından JSON/ID Ayıklama (429 üretmez)
+    try {
+      const pageRes = await fetch(`https://www.instagram.com/${encodeURIComponent(cleanUsername)}/`, {
+        credentials: 'include',
+        signal: state.abortController ? state.abortController.signal : undefined,
+      });
+      if (pageRes && pageRes.ok) {
+        const htmlText = await pageRes.text();
+        const idMatch =
+          htmlText.match(/"profilePage_(\d+)"/) ||
+          htmlText.match(/profilePage_(\d+)/) ||
+          htmlText.match(/"user_id"\s*:\s*"(\d+)"/) ||
+          htmlText.match(/"pk"\s*:\s*"(\d+)"[^}]{0,200}"username"\s*:\s*"([^"]+)"/i);
+        const fCountMatch = htmlText.match(/"edge_followed_by"\s*:\s*\{\s*"count"\s*:\s*(\d+)/);
+        const flwCountMatch = htmlText.match(/"edge_follow"\s*:\s*\{\s*"count"\s*:\s*(\d+)/);
+        const bioMatch = htmlText.match(/"biography"\s*:\s*"([^"]*)"/);
+        if (idMatch && idMatch[1]) {
+          let parsedBio = '';
+          if (bioMatch && bioMatch[1]) {
+            try {
+              parsedBio = JSON.parse(`"${bioMatch[1]}"`);
+            } catch (_) {
+              parsedBio = bioMatch[1];
+            }
+          }
+          const profile = {
+            id: String(idMatch[1]),
+            username: cleanUsername,
+            fullName: '',
+            profilePicUrl: '',
+            followerCount: fCountMatch ? Number(fCountMatch[1]) : null,
+            followingCount: flwCountMatch ? Number(flwCountMatch[1]) : null,
+            mediaCount: null,
+            isVerified: false,
+            isPrivate: false,
+            biography: parsedBio,
+            externalUrl: '',
+          };
+          state.profileDetailsCache.set(lower, profile);
+          return profile;
+        }
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') throw e;
+    }
+
+    // 5. ADIM: Web Profile Info REST Uç Noktası (maxRetries = 0: 429 dönerse beklemez)
+    try {
+      const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(cleanUsername)}`;
+      const res = await fetchWithRetry(url, {}, 0);
+      if (res && res.ok) {
+        const json = await res.json();
+        const u = json?.data?.user;
+        if (u && (u.id || u.pk)) {
+          const profile = {
+            id: String(u.id || u.pk),
+            username: u.username || cleanUsername,
+            fullName: u.full_name || '',
+            profilePicUrl: u.profile_pic_url_hd || u.profile_pic_url || '',
+            followerCount: u.edge_followed_by?.count ?? u.follower_count ?? 0,
+            followingCount: u.edge_follow?.count ?? u.following_count ?? 0,
+            mediaCount: u.edge_owner_to_timeline_media?.count ?? u.media_count ?? 0,
+            isVerified: Boolean(u.is_verified),
+            isPrivate: Boolean(u.is_private),
+            biography: u.biography || '',
+            externalUrl: u.external_url || '',
+          };
+          state.profileDetailsCache.set(lower, profile);
+          return profile;
+        }
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') throw e;
+    }
+
+    // 6. ADIM: Son Çare Olarak Aktif Oturum Çerezi (ds_user_id)
+    if (cookieUserId) {
+      const fallbackProfile = {
+        id: String(cookieUserId),
+        username: cleanUsername || viewer?.username || 'aktif_hesap',
+        fullName: '',
+        profilePicUrl: '',
+        followerCount: null,
+        followingCount: null,
+        mediaCount: null,
+        isVerified: false,
+        isPrivate: false,
+        biography: '',
+        externalUrl: '',
+      };
+      return fallbackProfile;
+    }
+
+    throw new Error(`"@${cleanUsername}" profili çözümlenemedi. Lütfen "⚡ Kendi Hesabımı Tara" butonunu kullanın.`);
+  }
+
+  async function fetchUserFullDetails(userId, usernameHint = '') {
+    if (usernameHint) {
+      return resolveUserProfile(usernameHint, { forceLiveBio: true });
+    }
     return null;
   }
 
-  async function fetchWithRetry(url, options = {}, maxRetries = 4) {
-    const headers = {
-      'X-IG-App-ID': IG_APP_ID,
-      'X-CSRFToken': getCsrfToken(),
-      'X-Requested-With': 'XMLHttpRequest',
-      ...(options.headers || {}),
-    };
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      if (state.abortController?.signal.aborted) {
-        throw new Error('İşlem kullanıcı tarafından durduruldu.');
-      }
-
-      const response = await fetch(url, {
-        credentials: 'include',
-        ...options,
-        headers,
-        signal: state.abortController?.signal,
-      });
-
-      if (response.ok) {
-        return response;
-      }
-
-      if (response.status === 429) {
-        const waitSec = Math.pow(2, attempt) * 4;
-        addLog(`Rate limit (429) algılandı, ${waitSec} saniye bekleniyor...`, 'warn');
-        for (let s = waitSec; s > 0; s--) {
-          if (state.abortController?.signal.aborted) {
-            throw new Error('İşlem kullanıcı tarafından durduruldu.');
-          }
-          updateStatus(`Rate limit (429). Deneme ${attempt}/${maxRetries} — ${s}s bekleniyor...`);
-          await sleep(1000);
-        }
-        continue;
-      }
-
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    throw new Error('Maksimum deneme sayısına ulaşıldı (429 Too Many Requests).');
-  }
-
-  async function resolveUserProfile(username) {
-    const cleanUser = username.trim().replace(/^@/, '');
-    const cookieUserId = getCookie('ds_user_id');
-    const viewer = getLoggedInViewerFromDOM();
-
-    if (
-      cookieUserId &&
-      (!cleanUser ||
-        (viewer?.username && viewer.username.toLowerCase() === cleanUser.toLowerCase()))
-    ) {
-      return {
-        id: String(cookieUserId),
-        username: cleanUser || viewer?.username || getDefaultUsername() || 'aktif_hesap',
-        fullName: 'Aktif Oturum',
-        profilePicUrl: '',
-        followerCount: 0,
-        followingCount: 0,
-      };
-    }
-
-    if (cleanUser) {
-      const domProfile = extractStrictProfileFromScripts(
-        document.querySelectorAll('script[type="application/json"]'),
-        cleanUser,
-        window.location.pathname.toLowerCase().includes(`/${cleanUser.toLowerCase()}`)
-          ? document.documentElement.innerHTML
-          : ''
-      );
-      if (domProfile?.id) {
-        return domProfile;
-      }
-
-      try {
-        updateStatus(`@${cleanUser} GraphQL üzerinden doğrulanıyor...`);
-        const variables = JSON.stringify({
-          data: {
-            count: 1,
-            include_relationship_info: true,
-            latest_besties_reel_media: true,
-            latest_reel_media: true,
-          },
-          username: cleanUser,
-          __relay_internal__pv__PolarisIsLoggedInrelayprovider: true,
-        });
-        const gqlUrl = `https://www.instagram.com/graphql/query/?doc_id=${TIMELINE_DOC_ID}&variables=${encodeURIComponent(
-          variables
-        )}`;
-        const gqlRes = await fetchWithRetry(gqlUrl, {}, 2);
-        const gqlJson = await gqlRes.json();
-        const edges =
-          gqlJson?.data?.xdt_api__v1__feed__user_timeline_graphql_connection?.edges || [];
-        const firstUser = edges[0]?.node?.user || edges[0]?.node?.owner;
-        if (firstUser && (firstUser.pk || firstUser.id)) {
-          return {
-            id: String(firstUser.pk || firstUser.id),
-            username: firstUser.username || cleanUser,
-            fullName: firstUser.full_name || '',
-            profilePicUrl: firstUser.profile_pic_url || '',
-            followerCount: 0,
-            followingCount: 0,
-          };
-        }
-      } catch (_) {}
-
-      try {
-        updateStatus(`@${cleanUser} profil sayfası okunuyor...`);
-        const htmlRes = await fetch(`https://www.instagram.com/${encodeURIComponent(cleanUser)}/`, {
-          credentials: 'include',
-          signal: state.abortController?.signal,
-        });
-        if (htmlRes.ok) {
-          const html = await htmlRes.text();
-          const doc = new DOMParser().parseFromString(html, 'text/html');
-          const extracted = extractStrictProfileFromScripts(
-            doc.querySelectorAll('script[type="application/json"]'),
-            cleanUser,
-            html
-          );
-          if (extracted?.id) {
-            return extracted;
-          }
-        }
-      } catch (_) {}
-    }
-
-    if (cookieUserId) {
-      return {
-        id: String(cookieUserId),
-        username: cleanUser || viewer?.username || 'aktif_hesap',
-        fullName: 'Aktif Oturum',
-        profilePicUrl: '',
-        followerCount: 0,
-        followingCount: 0,
-      };
-    }
-
-    throw new Error(
-      'Kullanıcı ID çözümlenemedi. Lütfen Instagram hesabınıza giriş yaptığınızdan emin olun.'
-    );
-  }
-
+  // 1. YÖNTEM: REST API ile Takipçi / Takip Edilen Listesi Çekme
   async function fetchViaRestApi(userId, type, expectedTotal, progressStart, progressEnd) {
-    const list = [];
-    const seenIds = new Set();
-    const isFollowers = type === 'followers';
-    const label = isFollowers ? 'Takipçiler' : 'Takip edilenler';
-    let maxId = null;
-    let hasMore = true;
+    const results = [];
+    const seen = new Set();
+    let maxId = '';
+    let page = 0;
 
-    while (hasMore) {
-      const params = new URLSearchParams({ count: String(PAGE_SIZE) });
-      if (maxId) params.set('max_id', String(maxId));
-
-      const url = `https://www.instagram.com/api/v1/friendships/${encodeURIComponent(
-        userId
-      )}/${type}/?${params.toString()}`;
+    while (true) {
+      if (state.abortController?.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      const url = `https://www.instagram.com/api/v1/friendships/${encodeURIComponent(userId)}/${type}/?count=${PAGE_SIZE}${maxId ? `&max_id=${encodeURIComponent(maxId)}` : ''}`;
       const res = await fetchWithRetry(url);
-      const data = await res.json();
+      if (!res || !res.ok) {
+        throw new Error(`REST API ${type} hatası (${res?.status || 'Ağ'})`);
+      }
 
-      const users = data?.users || [];
+      const data = await res.json();
+      const users = Array.isArray(data?.users) ? data.users : [];
       for (const u of users) {
         const uid = String(u.pk || u.id || '');
-        if (uid && !seenIds.has(uid)) {
-          seenIds.add(uid);
-          list.push({
-            id: uid,
-            username: u.username || '',
-            full_name: u.full_name || '',
-            profile_pic_url: u.profile_pic_url_hd || u.profile_pic_url || '',
-            is_verified: Boolean(u.is_verified),
-            is_private: Boolean(u.is_private),
-          });
-        }
+        if (!uid || seen.has(uid)) continue;
+        seen.add(uid);
+        results.push({
+          id: uid,
+          username: u.username || '',
+          full_name: u.full_name || '',
+          profile_pic_url: u.profile_pic_url_hd || u.profile_pic_url || '',
+          is_verified: Boolean(u.is_verified),
+          is_private: Boolean(u.is_private),
+          followOrderIndex: results.length,
+        });
       }
 
-      const ratio = expectedTotal > 0 ? Math.min(1, list.length / expectedTotal) : 0.5;
-      const pct = Math.round(progressStart + ratio * (progressEnd - progressStart));
-      updateProgress(pct);
+      page++;
+      const totalEst = expectedTotal && expectedTotal > 0 ? expectedTotal : Math.max(results.length + 50, 100);
+      const ratio = Math.min(1, results.length / totalEst);
+      const currentPct = Math.round(progressStart + ratio * (progressEnd - progressStart));
+      updateProgress(currentPct);
       updateStatus(
-        `${label} çekiliyor... (${list.length}${expectedTotal ? ' / ' + expectedTotal : ''})`
+        `${type === 'followers' ? 'Takipçiler' : 'Takip Edilenler'} çekiliyor: ${results.length}${expectedTotal ? ` / ${expectedTotal}` : ''} (Sayfa ${page})`
       );
 
-      if (data?.next_max_id) {
-        maxId = data.next_max_id;
-        await randomDelay(750, 1450);
-      } else {
-        hasMore = false;
-      }
+      if (!data?.next_max_id) break;
+      maxId = String(data.next_max_id);
+      await sleep(getRateLimitDelay('scan'));
     }
 
-    return list;
+    return results;
   }
 
+  // 2. YÖNTEM: GraphQL ile Takipçi / Takip Edilen Listesi Çekme
   async function fetchViaGraphQL(userId, type, expectedTotal, progressStart, progressEnd) {
-    const list = [];
-    const seenIds = new Set();
-    const isFollowers = type === 'followers';
-    const label = isFollowers ? 'Takipçiler' : 'Takip edilenler';
+    const results = [];
+    const seen = new Set();
+    let afterCursor = null;
     let hasNextPage = true;
-    let endCursor = null;
-    let totalCount = expectedTotal || 0;
-    const queryHash = isFollowers ? FOLLOWERS_QUERY_HASH : FOLLOWING_QUERY_HASH;
-    const edgeKey = isFollowers ? 'edge_followed_by' : 'edge_follow';
+    let page = 0;
+    const queryHash = type === 'followers' ? FOLLOWERS_QUERY_HASH : FOLLOWING_QUERY_HASH;
+    const edgeKey = type === 'followers' ? 'edge_followed_by' : 'edge_follow';
 
     while (hasNextPage) {
+      if (state.abortController?.signal.aborted) throw new DOMException('Aborted', 'AbortError');
       const variables = {
         id: String(userId),
-        include_reel: true,
+        include_reel: false,
         fetch_mutual: false,
         first: PAGE_SIZE,
+        after: afterCursor,
       };
-      if (endCursor) variables.after = endCursor;
-
-      const url = `https://www.instagram.com/graphql/query/?query_hash=${queryHash}&variables=${encodeURIComponent(
-        JSON.stringify(variables)
-      )}`;
-
+      const url = `https://www.instagram.com/graphql/query/?query_hash=${queryHash}&variables=${encodeURIComponent(JSON.stringify(variables))}`;
       const res = await fetchWithRetry(url);
+      if (!res || !res.ok) {
+        throw new Error(`GraphQL ${type} hatası (${res?.status || 'Ağ'})`);
+      }
+
       const json = await res.json();
-      const edgeObj = json?.data?.user?.[edgeKey];
+      const connection = json?.data?.user?.[edgeKey];
+      if (!connection) break;
 
-      if (!edgeObj) {
-        throw new Error('GraphQL edge verisi bulunamadı.');
-      }
-
-      if (!totalCount && typeof edgeObj.count === 'number') {
-        totalCount = edgeObj.count;
-      }
-
-      const edges = edgeObj.edges || [];
+      const edges = Array.isArray(connection.edges) ? connection.edges : [];
       for (const edge of edges) {
         const node = edge?.node;
-        if (node && node.id && !seenIds.has(String(node.id))) {
-          seenIds.add(String(node.id));
-          list.push({
-            id: String(node.id),
-            username: node.username || '',
-            full_name: node.full_name || '',
-            profile_pic_url: node.profile_pic_url || '',
-            is_verified: Boolean(node.is_verified),
-            is_private: Boolean(node.is_private),
-          });
-        }
+        if (!node) continue;
+        const uid = String(node.id || node.pk || '');
+        if (!uid || seen.has(uid)) continue;
+        seen.add(uid);
+        results.push({
+          id: uid,
+          username: node.username || '',
+          full_name: node.full_name || '',
+          profile_pic_url: node.profile_pic_url || '',
+          is_verified: Boolean(node.is_verified),
+          is_private: Boolean(node.is_private),
+          followOrderIndex: results.length,
+        });
       }
 
-      const ratio = totalCount > 0 ? Math.min(1, list.length / totalCount) : 0.5;
-      const pct = Math.round(progressStart + ratio * (progressEnd - progressStart));
-      updateProgress(pct);
+      page++;
+      const totalEst = connection.count || expectedTotal || Math.max(results.length + 50, 100);
+      const ratio = Math.min(1, results.length / totalEst);
+      const currentPct = Math.round(progressStart + ratio * (progressEnd - progressStart));
+      updateProgress(currentPct);
       updateStatus(
-        `${label} çekiliyor... (${list.length}${totalCount ? ' / ' + totalCount : ''})`
+        `${type === 'followers' ? 'Takipçiler (GQL)' : 'Takip Edilenler (GQL)'}: ${results.length} / ${totalEst} (Sayfa ${page})`
       );
 
-      hasNextPage = Boolean(edgeObj.page_info?.has_next_page && edgeObj.page_info?.end_cursor);
-      endCursor = edgeObj.page_info?.end_cursor || null;
-
-      if (hasNextPage) {
-        await randomDelay(700, 1350);
-      }
+      hasNextPage = Boolean(connection.page_info?.has_next_page);
+      afterCursor = connection.page_info?.end_cursor || null;
+      if (!afterCursor) break;
+      await sleep(getRateLimitDelay('scan'));
     }
 
-    return list;
+    return results;
   }
 
-  async function fetchFriendshipList(userId, type, expectedTotal, progressStart, progressEnd) {
+  // Akıllı Veri Çekme Motoru (REST -> GraphQL Fallback)
+  async function fetchFriendshipList(targetUserId, listType, countHint, startProgress, endProgress) {
     try {
-      const restList = await fetchViaRestApi(
-        userId,
-        type,
-        expectedTotal,
-        progressStart,
-        progressEnd
-      );
-      if (restList.length > 0) {
+      const restList = await fetchViaRestApi(targetUserId, listType, countHint, startProgress, endProgress);
+      if (restList.length > 0 || countHint === 0) {
         return restList;
       }
-    } catch (restErr) {
-      if (state.abortController?.signal.aborted) throw restErr;
+    } catch (err) {
+      if (err.name === 'AbortError') throw err;
+      addLog(`REST API (${listType}) yedek yönteme (GraphQL) geçiyor: ${err.message}`, 'warn');
     }
-
-    return fetchViaGraphQL(userId, type, expectedTotal, progressStart, progressEnd);
+    return fetchViaGraphQL(targetUserId, listType, countHint, startProgress, endProgress);
   }
 
   // Etkileşim API Fonksiyonları
   async function unfollowUser(userId) {
-    const url = `https://www.instagram.com/api/v1/friendships/destroy/${encodeURIComponent(
-      userId
-    )}/`;
+    const url = `https://www.instagram.com/api/v1/friendships/destroy/${encodeURIComponent(userId)}/`;
     const res = await fetchWithRetry(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     });
+    if (!res || !res.ok) {
+      throw new Error(`HTTP ${res?.status || 'Hata'}`);
+    }
     incrementTodayQuota();
     return res.json();
   }
 
   async function followUser(userId) {
-    const url = `https://www.instagram.com/api/v1/friendships/create/${encodeURIComponent(
-      userId
-    )}/`;
+    const url = `https://www.instagram.com/api/v1/friendships/create/${encodeURIComponent(userId)}/`;
     const res = await fetchWithRetry(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     });
+    if (!res || !res.ok) {
+      throw new Error(`HTTP ${res?.status || 'Hata'}`);
+    }
     incrementTodayQuota();
     return res.json();
   }
 
   async function removeFollowerUser(userId) {
-    const url = `https://www.instagram.com/api/v1/friendships/remove_follower/${encodeURIComponent(
-      userId
-    )}/`;
+    const url = `https://www.instagram.com/api/v1/friendships/remove_follower/${encodeURIComponent(userId)}/`;
     const res = await fetchWithRetry(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     });
+    if (!res || !res.ok) {
+      throw new Error(`HTTP ${res?.status || 'Hata'}`);
+    }
     incrementTodayQuota();
     return res.json();
   }
 
-  function compareAndSaveSnapshot(userId, currentFollowers) {
-    const allSnapshots = JSON.parse(localStorage.getItem(STORAGE_SNAPSHOT) || '{}');
-    const prev = allSnapshots[userId];
+  // ============================================================================
+  // SON TAKİP KİŞİSİNİ ÇIKART MODÜLÜ (UNFOLLOW LAST FOLLOWED / REMOVE LAST FOLLOWER)
+  // ============================================================================
 
-    if (prev && Array.isArray(prev.followers)) {
-      const currIds = new Set(currentFollowers.map((u) => String(u.id)));
-      const prevIds = new Set(prev.followers.map((u) => String(u.id)));
+  function getLastFollowedPerson() {
+    return Array.isArray(state.following) && state.following.length > 0 ? state.following[0] : null;
+  }
 
-      state.lostFollowers = prev.followers.filter((u) => !currIds.has(String(u.id)));
-      state.newFollowers = currentFollowers.filter((u) => !prevIds.has(String(u.id)));
+  function getLastFollowerPerson() {
+    return Array.isArray(state.followers) && state.followers.length > 0 ? state.followers[0] : null;
+  }
 
-      if (state.lostFollowers.length > 0 || state.newFollowers.length > 0) {
-        addLog(
-          `Önceki taramayla karşılaştırıldı: ${state.lostFollowers.length} kişi takipten çıkmış, ${state.newFollowers.length} yeni takipçi var.`,
-          'info'
-        );
-      }
-    } else {
-      state.lostFollowers = [];
-      state.newFollowers = [];
+  async function unfollowLastFollowedPerson(targetUser = null) {
+    const person = targetUser || getLastFollowedPerson();
+    if (!person) {
+      showToast('Önce hesabınızı tarayın veya takip edilen listesi boş!', 'error');
+      return false;
     }
 
-    allSnapshots[userId] = {
-      updatedAt: new Date().toISOString(),
-      followers: currentFollowers.map((u) => ({
-        id: u.id,
-        username: u.username,
-        full_name: u.full_name,
-        profile_pic_url: u.profile_pic_url,
-        is_verified: u.is_verified,
-        is_private: u.is_private,
-      })),
-    };
+    if (isWhitelisted(person.id)) {
+      showToast(`@${person.username} koruma listesinde (Whitelist)! Önce korumadan çıkarın.`, 'warning');
+      return false;
+    }
+
     try {
+      updateStatus(`Son takip edilen kişi (@${person.username}) takipten çıkarılıyor...`);
+      await unfollowUser(person.id);
+      saveUnfollowHistory(person, 'unfollow_last');
+
+      state.following = state.following.filter((u) => String(u.id) !== String(person.id));
+      state.selectedIds.delete(String(person.id));
+      computeCategories();
+      saveLastScanCache();
+      renderList();
+
+      addLog(`✅ Son takip edilen kişi takipten çıkarıldı: @${person.username} (ID: ${person.id})`, 'success');
+      updateStatus(`Son takip edilen kişi (@${person.username}) başarıyla takipten çıkarıldı.`);
+      showToast(`@${person.username} takipten çıkarıldı!`, 'success');
+      return true;
+    } catch (err) {
+      addLog(`❌ Son takip kişisi çıkarılamadı (@${person.username}): ${err.message}`, 'error');
+      showToast(`Hata: @${person.username} çıkarılamadı (${err.message})`, 'error');
+      return false;
+    }
+  }
+
+  async function removeLastFollowerPerson(targetUser = null) {
+    const person = targetUser || getLastFollowerPerson();
+    if (!person) {
+      showToast('Önce hesabınızı tarayın veya takipçi listesi boş!', 'error');
+      return false;
+    }
+
+    if (isWhitelisted(person.id)) {
+      showToast(`@${person.username} koruma listesinde (Whitelist)! Önce korumadan çıkarın.`, 'warning');
+      return false;
+    }
+
+    try {
+      updateStatus(`Son takipçi (@${person.username}) takipçilerden çıkarılıyor...`);
+      await removeFollowerUser(person.id);
+      saveUnfollowHistory(person, 'remove_last_follower');
+
+      state.followers = state.followers.filter((u) => String(u.id) !== String(person.id));
+      state.selectedIds.delete(String(person.id));
+      computeCategories();
+      saveLastScanCache();
+      renderList();
+
+      addLog(`✅ Son takipçi takipçilerden çıkarıldı: @${person.username} (ID: ${person.id})`, 'success');
+      updateStatus(`Son takipçi (@${person.username}) takipçilerinizden çıkarıldı.`);
+      showToast(`@${person.username} takipçilerden çıkarıldı!`, 'success');
+      return true;
+    } catch (err) {
+      addLog(`❌ Son takipçi çıkarılamadı (@${person.username}): ${err.message}`, 'error');
+      showToast(`Hata: @${person.username} çıkarılamadı (${err.message})`, 'error');
+      return false;
+    }
+  }
+
+  function closeAllSubModals() {
+    document.querySelectorAll('.igfc-submodal-overlay').forEach((el) => el.remove());
+  }
+
+  function openLastFollowModal() {
+    closeAllSubModals();
+
+    const lastFollowed = getLastFollowedPerson();
+    const lastFollower = getLastFollowerPerson();
+    const recentFollowing = state.following.slice(0, 5);
+    const recentFollowers = state.followers.slice(0, 5);
+
+    const overlay = document.createElement('div');
+    overlay.id = 'igfc-modal-overlay';
+    overlay.className = 'igfc-submodal-overlay';
+
+    const renderMiniPersonCard = (person, roleTitle, actionBtnId, actionBtnLabel, emptyText) => {
+      if (!person) {
+        return `
+          <div class="igfc-last-person-box empty">
+            <div class="igfc-last-person-role">${escapeHtml(roleTitle)}</div>
+            <div class="igfc-last-person-empty">${escapeHtml(emptyText)}</div>
+          </div>
+        `;
+      }
+      const isProtected = isWhitelisted(person.id);
+      return `
+        <div class="igfc-last-person-box">
+          <div class="igfc-last-person-role">${escapeHtml(roleTitle)}</div>
+          <div class="igfc-last-person-row">
+            <img id="${actionBtnId}-avatar" class="igfc-avatar" alt="@${escapeHtml(person.username)}" />
+            <div class="igfc-last-person-meta">
+              <a href="https://www.instagram.com/${encodeURIComponent(person.username)}/" target="_blank" rel="noopener noreferrer" class="igfc-username">
+                @${escapeHtml(person.username)}
+                ${person.is_verified ? '<span class="igfc-tag-verified" title="Onaylı Hesap">✓</span>' : ''}
+                ${person.is_private ? '<span class="igfc-tag-private" title="Gizli Hesap">🔒</span>' : ''}
+              </a>
+              <div class="igfc-fullname">${escapeHtml(person.full_name || 'İsim belirtilmemiş')}</div>
+              <div class="igfc-userid">ID: ${escapeHtml(person.id)} ${isProtected ? '• ★ Korunanlarda' : ''}</div>
+            </div>
+          </div>
+          <div class="igfc-last-person-actions">
+            <button id="${actionBtnId}" class="igfc-btn igfc-btn-danger" ${isProtected ? 'disabled title="Koruma listesindeki kullanıcı çıkarılamaz"' : ''}>
+              ${escapeHtml(actionBtnLabel)}
+            </button>
+          </div>
+        </div>
+      `;
+    };
+
+    const renderRecentRows = (items, mode) => {
+      if (!items.length) return '<div style="color:var(--text-secondary);font-size:12px;">Liste boş (önce tarama yapın).</div>';
+      return items
+        .map(
+          (u, idx) => `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;">
+            <div style="min-width:0;">
+              <strong>#${idx + 1}</strong>
+              <a href="https://www.instagram.com/${encodeURIComponent(u.username)}/" target="_blank" rel="noopener noreferrer" class="igfc-username">@${escapeHtml(u.username)}</a>
+              <span style="color:var(--text-secondary);font-size:11.5px;">${escapeHtml(u.full_name || '')}</span>
+            </div>
+            <button class="igfc-btn igfc-btn-danger igfc-recent-act-btn" data-mode="${mode}" data-uid="${escapeHtml(u.id)}" ${isWhitelisted(u.id) ? 'disabled' : ''}>
+              ${mode === 'following' ? '🚫 Takipten Çık' : '❌ Takipçiden Çıkar'}
+            </button>
+          </div>
+        `
+        )
+        .join('');
+    };
+
+    overlay.innerHTML = `
+      <div class="igfc-submodal-card wide">
+        <div class="igfc-submodal-header">
+          <h3>🎯 Son Takip Kişisini Çıkart (Hızlı Modül)</h3>
+          <button id="igfc-submodal-close" class="igfc-win-btn close" title="Kapat">✕</button>
+        </div>
+        <div class="igfc-submodal-body">
+          <p class="igfc-submodal-desc">
+            Instagram API sıralamasına göre <strong>en son takip ettiğiniz</strong> hesabı (#1) veya <strong>sizi en son takip eden</strong> hesabı (#1) tek tıkla çıkarabilirsiniz.
+          </p>
+          <div class="igfc-last-person-grid">
+            ${renderMiniPersonCard(
+              lastFollowed,
+              '📤 En Son Takip Ettiğiniz Kişi (Following #1)',
+              'igfc-modal-unfollow-last-btn',
+              '🚫 Son Takip Edileni Takipten Çıkart',
+              'Henüz tarama yapılmadı veya takip edilen kimse yok.'
+            )}
+            ${renderMiniPersonCard(
+              lastFollower,
+              '📥 Sizi En Son Takip Eden Kişi (Follower #1)',
+              'igfc-modal-remove-last-follower-btn',
+              '❌ Son Takipçiyi Takipçilerden Çıkart',
+              'Henüz tarama yapılmadı veya takipçi listesi boş.'
+            )}
+          </div>
+
+          <div class="igfc-last-person-grid" style="margin-top:14px;">
+            <div class="igfc-last-person-box">
+              <div class="igfc-last-person-role">📋 Son 5 Takip Ettiğiniz Kişi</div>
+              <div style="display:flex;flex-direction:column;gap:6px;">${renderRecentRows(recentFollowing, 'following')}</div>
+            </div>
+            <div class="igfc-last-person-box">
+              <div class="igfc-last-person-role">📋 Sizi Son Takip Eden 5 Kişi</div>
+              <div style="display:flex;flex-direction:column;gap:6px;">${renderRecentRows(recentFollowers, 'follower')}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const root = document.getElementById(EXISTING_ID);
+    (root || document.body).appendChild(overlay);
+
+    if (lastFollowed) {
+      hydrateAvatarImage(document.getElementById('igfc-modal-unfollow-last-btn-avatar'), lastFollowed);
+    }
+    if (lastFollower) {
+      hydrateAvatarImage(document.getElementById('igfc-modal-remove-last-follower-btn-avatar'), lastFollower);
+    }
+
+    overlay.querySelector('#igfc-submodal-close')?.addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+
+    overlay.querySelector('#igfc-modal-unfollow-last-btn')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = '⏳ Çıkarılıyor...';
+      await unfollowLastFollowedPerson();
+      openLastFollowModal();
+    });
+
+    overlay.querySelector('#igfc-modal-remove-last-follower-btn')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = '⏳ Çıkarılıyor...';
+      await removeLastFollowerPerson();
+      openLastFollowModal();
+    });
+
+    overlay.querySelectorAll('.igfc-recent-act-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const uid = btn.dataset.uid;
+        const mode = btn.dataset.mode;
+        btn.disabled = true;
+        btn.textContent = '⏳...';
+        if (mode === 'following') {
+          const target = state.following.find((u) => String(u.id) === String(uid));
+          if (target) await unfollowLastFollowedPerson(target);
+        } else {
+          const target = state.followers.find((u) => String(u.id) === String(uid));
+          if (target) await removeLastFollowerPerson(target);
+        }
+        openLastFollowModal();
+      });
+    });
+  }
+
+  // ============================================================================
+  // ANLIK TAKİPÇİ GÖRÜNTÜSÜ (SNAPSHOT) KARŞILAŞTIRMA & KAYDETME
+  // ============================================================================
+
+  function compareAndSaveSnapshot(userId, currentFollowers) {
+    try {
+      const raw = localStorage.getItem(STORAGE_SNAPSHOT);
+      const allSnapshots = raw ? JSON.parse(raw) : {};
+      const prev = allSnapshots[userId];
+
+      if (prev && Array.isArray(prev.followers)) {
+        const currentIds = new Set(currentFollowers.map((u) => String(u.id)));
+        const prevIds = new Set(prev.followers.map((u) => String(u.id)));
+
+        state.lostFollowers = prev.followers.filter((u) => !currentIds.has(String(u.id)));
+        state.newFollowers = currentFollowers.filter((u) => !prevIds.has(String(u.id)));
+      } else {
+        state.lostFollowers = [];
+        state.newFollowers = [];
+      }
+
+      allSnapshots[userId] = {
+        updatedAt: new Date().toISOString(),
+        followers: currentFollowers.map((u) => ({
+          id: String(u.id),
+          username: u.username,
+          full_name: u.full_name,
+          profile_pic_url: u.profile_pic_url,
+          is_verified: Boolean(u.is_verified),
+          is_private: Boolean(u.is_private),
+        })),
+      };
       localStorage.setItem(STORAGE_SNAPSHOT, JSON.stringify(allSnapshots));
     } catch (_) {}
   }
 
-  // CANLI PROFİL DETAY & BİYOGRAFİ İNCELEME KARTI
-  async function openUserDetailModal(user, avatarSrc) {
-    const existing = document.getElementById('igfc-submodal');
-    if (existing) existing.remove();
+  // ============================================================================
+  // TÜM ALT MODALLAR (DETAY, SÜRÜM GEÇMİŞİ, ANALİZ, KARŞILAŞTIRMA, AYARLAR)
+  // ============================================================================
 
+  function closeUserDetailModal() {
+    document.getElementById('igfc-user-detail-modal')?.closest('.igfc-submodal-overlay')?.remove();
+  }
+
+  async function openUserDetailModal(user) {
+    closeAllSubModals();
+
+    const followerIds = new Set(state.followers.map((u) => String(u.id)));
+    const followingIds = new Set(state.following.map((u) => String(u.id)));
     const uid = String(user.id);
-    const isFollower = state.followers.some((u) => String(u.id) === uid);
-    const isFollowing = state.following.some((u) => String(u.id) === uid);
-    const suspicion = computeSuspicionInfo(user, isFollowing && !isFollower);
+    const followsYou = followerIds.has(uid);
+    const youFollow = followingIds.has(uid);
+    const isProtected = isWhitelisted(uid);
+    const isFav = isFavorite(uid);
 
-    const box = document.createElement('div');
-    box.id = 'igfc-submodal';
-    box.className = 'igfc-submodal-backdrop';
+    let relationLabel = 'Takipleşmiyorsunuz';
+    if (followsYou && youFollow) relationLabel = '🤝 Karşılıklı Takipleşiyorsunuz';
+    else if (youFollow && !followsYou) relationLabel = '🚫 Sen Takip Ediyorsun, O Seni Takip Etmiyor';
+    else if (!youFollow && followsYou) relationLabel = '💙 O Seni Takip Ediyor, Sen Takip Etmiyorsun';
 
-    box.innerHTML = `
-      <div class="igfc-submodal-box" style="max-width:540px;" onclick="event.stopPropagation()">
+    const susp = computeSuspicionInfo(user, youFollow && !followsYou);
+    const currentNote = getUserNote(uid);
+
+    const overlay = document.createElement('div');
+    overlay.id = 'igfc-modal-overlay';
+    overlay.className = 'igfc-submodal-overlay';
+    overlay.innerHTML = `
+      <div id="igfc-user-detail-modal" class="igfc-submodal-card">
         <div class="igfc-submodal-header">
-          <span style="font-size:16px; font-weight:800;">🔍 Kullanıcı Detay Kartı — @${escapeHtml(
-            user.username
-          )}</span>
-          <button class="igfc-win-btn close" id="igfc-submodal-close">✕</button>
+          <h3>👤 Canlı Profil İnceleme: @${escapeHtml(user.username)}</h3>
+          <button id="igfc-modal-close-btn" class="igfc-win-btn close" title="Kapat">✕</button>
         </div>
         <div class="igfc-submodal-body">
-          <div style="display:flex; align-items:center; gap:16px;">
-            <img src="${avatarSrc}" style="width:92px; height:92px; border-radius:50%; object-fit:cover; border:3px solid #3b82f6; flex-shrink:0;" />
-            <div style="flex:1; min-width:0;">
-              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                <a href="https://www.instagram.com/${encodeURIComponent(
-                  user.username
-                )}/" target="_blank" rel="noopener noreferrer" style="font-size:18px; font-weight:800; color:var(--text-primary); text-decoration:none;">
-                  @${escapeHtml(user.username)} ↗
-                </a>
-                ${user.is_verified ? '<span class="igfc-tag igfc-tag-verified">✓ Onaylı</span>' : ''}
-                ${user.is_private ? '<span class="igfc-tag igfc-tag-private">🔒 Gizli</span>' : ''}
+          <div class="igfc-detail-top">
+            <img id="igfc-detail-avatar" class="igfc-detail-avatar" alt="@${escapeHtml(user.username)}" />
+            <div class="igfc-detail-meta">
+              <div class="igfc-detail-uname">
+                <a href="https://www.instagram.com/${encodeURIComponent(user.username)}/" target="_blank" rel="noopener noreferrer" class="igfc-username">@${escapeHtml(user.username)}</a>
+                ${user.is_verified ? '<span class="igfc-tag-verified">✓ Onaylı</span>' : ''}
+                ${user.is_private ? '<span class="igfc-tag-private">🔒 Gizli</span>' : ''}
               </div>
-              <div style="font-size:14px; color:var(--text-secondary); margin-top:4px;">${escapeHtml(
-                user.full_name || 'İsim belirtilmemiş'
-              )}</div>
-              <div style="font-size:11.5px; color:#64748b; margin-top:4px;">Instagram User ID: ${escapeHtml(
-                uid
-              )}</div>
+              <div class="igfc-detail-fname">${escapeHtml(user.full_name || 'İsim belirtilmemiş')}</div>
+              <div class="igfc-detail-id">Instagram User ID: ${escapeHtml(uid)}</div>
+              <div class="igfc-detail-rel">${relationLabel}</div>
             </div>
           </div>
 
-          <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; text-align:center;">
-            <div class="igfc-cl-card" style="padding:10px;">
-              <div style="font-size:11px; color:var(--text-secondary);">Takipçileri</div>
-              <div id="igfc-detail-followers" style="font-size:17px; font-weight:800; color:var(--text-primary); margin-top:2px;">...</div>
-            </div>
-            <div class="igfc-cl-card" style="padding:10px;">
-              <div style="font-size:11px; color:var(--text-secondary);">Takip Ettikleri</div>
-              <div id="igfc-detail-following" style="font-size:17px; font-weight:800; color:var(--text-primary); margin-top:2px;">...</div>
-            </div>
-            <div class="igfc-cl-card" style="padding:10px;">
-              <div style="font-size:11px; color:var(--text-secondary);">Gönderileri</div>
-              <div id="igfc-detail-posts" style="font-size:17px; font-weight:800; color:var(--text-primary); margin-top:2px;">...</div>
-            </div>
+          <div id="igfc-detail-live-stats" class="igfc-detail-stats">
+            <div class="igfc-detail-stat"><span>Takipçi</span><strong id="igfc-d-followers">...</strong></div>
+            <div class="igfc-detail-stat"><span>Takip</span><strong id="igfc-d-following">...</strong></div>
+            <div class="igfc-detail-stat"><span>Gönderi</span><strong id="igfc-d-media">...</strong></div>
+            <div class="igfc-detail-stat"><span>Şüphe Skoru</span><strong>%${susp.score}</strong></div>
           </div>
 
-          <div class="igfc-cl-card">
-            <div style="font-size:12px; font-weight:700; color:var(--text-secondary); margin-bottom:6px;">Biyografi & Bağlantı</div>
-            <div id="igfc-detail-bio" style="font-size:13px; color:var(--text-primary); white-space:pre-wrap; line-height:1.45;">Profil sayfasından canlı okunuyor...</div>
-          </div>
+          <div id="igfc-detail-bio" class="igfc-detail-bio">Canlı profil biyografisi yükleniyor...</div>
 
-          <div class="igfc-cl-card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-            <div>
-              <div style="font-size:12px; color:var(--text-secondary);">İlişki Durumu</div>
-              <div style="font-size:13px; font-weight:700; color:var(--text-primary); margin-top:2px;">
-                ${
-                  isFollowing && isFollower
-                    ? '🟢 Karşılıklı Takipleşiyorsunuz'
-                    : isFollowing && !isFollower
-                    ? '🔴 Sen Takip Ediyorsun, O Seni Takip Etmiyor'
-                    : !isFollowing && isFollower
-                    ? '🔵 O Seni Takip Ediyor, Sen Takip Etmiyorsun'
-                    : '⚪ Takipleşmiyorsunuz'
-                }
-              </div>
-            </div>
-            <div>
-              <span class="igfc-tag" style="background:${
-                suspicion.isSuspicious ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)'
-              }; color:${suspicion.isSuspicious ? '#ef4444' : '#10b981'}; padding:4px 10px;">
-                Bot/İnaktif Riski: %${suspicion.score}
-              </span>
+          ${
+            susp.reasons.length > 0
+              ? `<div class="igfc-detail-reasons"><strong>Şüphe Sebepleri:</strong> ${susp.reasons.map(escapeHtml).join(', ')}</div>`
+              : ''
+          }
+
+          <div class="igfc-detail-note-box" style="margin-top:12px;">
+            <label for="igfc-user-note-input">📝 Özel Kullanıcı Notu:</label>
+            <textarea id="igfc-user-note-input" rows="2" class="igfc-textarea" placeholder="Bu hesap hakkında özel not ekleyin...">${escapeHtml(currentNote)}</textarea>
+            <div class="igfc-tools-btn-row" style="margin-top:8px;">
+              <button id="igfc-save-note-btn" class="igfc-btn igfc-btn-primary">💾 Notu Kaydet</button>
+              <button id="igfc-modal-whitelist-btn" class="igfc-btn ${isProtected ? 'igfc-btn-warning' : 'igfc-btn-secondary'}">
+                ${isProtected ? '★ Korumadan Çıkar' : '☆ Koruma Listesine Ekle'}
+              </button>
+              ${
+                youFollow
+                  ? `<button id="igfc-modal-unfollow-btn" class="igfc-btn igfc-btn-danger" ${isProtected ? 'disabled' : ''}>🚫 Takipten Çık</button>`
+                  : `<button id="igfc-modal-follow-btn" class="igfc-btn igfc-btn-success">➕ Takip Et</button>`
+              }
+              ${
+                followsYou
+                  ? `<button id="igfc-modal-remove-follower-btn" class="igfc-btn igfc-btn-warning" ${isProtected ? 'disabled' : ''}>❌ Takipçilerden Çıkar</button>`
+                  : ''
+              }
             </div>
           </div>
         </div>
       </div>
     `;
 
-    box.addEventListener('click', () => box.remove());
-    box.querySelector('#igfc-submodal-close').addEventListener('click', () => box.remove());
-    document.getElementById('igfc-modal')?.appendChild(box);
+    const root = document.getElementById(EXISTING_ID);
+    (root || document.body).appendChild(overlay);
+    hydrateAvatarImage(document.getElementById('igfc-detail-avatar'), user);
+
+    overlay.querySelector('#igfc-modal-close-btn')?.addEventListener('click', closeUserDetailModal);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeUserDetailModal();
+    });
+
+    overlay.querySelector('#igfc-save-note-btn')?.addEventListener('click', () => {
+      const val = overlay.querySelector('#igfc-user-note-input')?.value || '';
+      setUserNote(uid, val);
+      renderList();
+      showToast('Kullanıcı notu kaydedildi.', 'success');
+    });
+
+    overlay.querySelector('#igfc-modal-whitelist-btn')?.addEventListener('click', () => {
+      toggleWhitelist(uid);
+      renderList();
+      openUserDetailModal(user);
+    });
+
+    overlay.querySelector('#igfc-modal-unfollow-btn')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = '⏳ Çıkarılıyor...';
+      try {
+        await unfollowUser(uid);
+        saveUnfollowHistory(user, 'unfollow');
+        state.following = state.following.filter((item) => String(item.id) !== uid);
+        state.selectedIds.delete(uid);
+        computeCategories();
+        saveLastScanCache();
+        renderList();
+        showToast(`@${user.username} takipten çıkarıldı.`, 'success');
+        closeUserDetailModal();
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = '🚫 Takipten Çık';
+        showToast(`Hata: ${err.message}`, 'error');
+      }
+    });
+
+    overlay.querySelector('#igfc-modal-follow-btn')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = '⏳ Takip Ediliyor...';
+      try {
+        await followUser(uid);
+        saveUnfollowHistory(user, 'follow');
+        if (!state.following.some((item) => String(item.id) === uid)) {
+          state.following.unshift(user);
+        }
+        computeCategories();
+        saveLastScanCache();
+        renderList();
+        showToast(`@${user.username} takip edildi.`, 'success');
+        closeUserDetailModal();
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = '➕ Takip Et';
+        showToast(`Hata: ${err.message}`, 'error');
+      }
+    });
+
+    overlay.querySelector('#igfc-modal-remove-follower-btn')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = '⏳ Çıkarılıyor...';
+      try {
+        await removeFollowerUser(uid);
+        saveUnfollowHistory(user, 'remove_follower');
+        state.followers = state.followers.filter((item) => String(item.id) !== uid);
+        state.selectedIds.delete(uid);
+        computeCategories();
+        saveLastScanCache();
+        renderList();
+        showToast(`@${user.username} takipçilerden çıkarıldı.`, 'success');
+        closeUserDetailModal();
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = '❌ Takipçilerden Çıkar';
+        showToast(`Hata: ${err.message}`, 'error');
+      }
+    });
 
     try {
-      let details = state.profileDetailsCache.get(user.username);
-      if (!details) {
-        const res = await fetch(`https://www.instagram.com/${encodeURIComponent(user.username)}/`, {
-          credentials: 'include',
-        });
-        if (res.ok) {
-          const html = await res.text();
-          const doc = new DOMParser().parseFromString(html, 'text/html');
-          details = extractStrictProfileFromScripts(
-            doc.querySelectorAll('script[type="application/json"]'),
-            user.username,
-            html
-          );
-          if (details) state.profileDetailsCache.set(user.username, details);
-        }
+      const live = await fetchUserFullDetails(uid, user.username);
+      const fEl = document.getElementById('igfc-d-followers');
+      const flEl = document.getElementById('igfc-d-following');
+      const mEl = document.getElementById('igfc-d-media');
+      const bioEl = document.getElementById('igfc-detail-bio');
+      if (fEl) fEl.textContent = live?.followerCount != null ? live.followerCount.toLocaleString('tr-TR') : '-';
+      if (flEl) flEl.textContent = live?.followingCount != null ? live.followingCount.toLocaleString('tr-TR') : '-';
+      if (mEl) mEl.textContent = live?.mediaCount != null ? live.mediaCount.toLocaleString('tr-TR') : '-';
+      if (bioEl) {
+        bioEl.innerHTML = live?.biography
+          ? `${escapeHtml(live.biography)}${live.externalUrl ? `<br><a href="${escapeHtml(live.externalUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(live.externalUrl)}</a>` : ''}`
+          : '<em>Biyografi bulunmuyor veya gizli.</em>';
       }
-
-      const fEl = box.querySelector('#igfc-detail-followers');
-      const flwEl = box.querySelector('#igfc-detail-following');
-      const pEl = box.querySelector('#igfc-detail-posts');
-      const bioEl = box.querySelector('#igfc-detail-bio');
-
-      if (details) {
-        if (fEl) fEl.textContent = details.followerCount?.toLocaleString('tr-TR') ?? '—';
-        if (flwEl) flwEl.textContent = details.followingCount?.toLocaleString('tr-TR') ?? '—';
-        if (pEl) pEl.textContent = details.mediaCount?.toLocaleString('tr-TR') ?? '—';
-        if (bioEl) {
-          bioEl.innerHTML = `${escapeHtml(details.biography || 'Biyografi boş.')}${
-            details.externalUrl
-              ? `<br><a href="${escapeHtml(
-                  details.externalUrl
-                )}" target="_blank" rel="noopener noreferrer" style="color:#3b82f6;">🔗 ${escapeHtml(
-                  details.externalUrl
-                )}</a>`
-              : ''
-          }`;
-        }
-      } else if (bioEl) {
-        bioEl.textContent = 'Detaylı biyografi verisi gizli veya erişilemedi.';
-      }
-    } catch (_) {}
+    } catch (_) {
+      const bioEl = document.getElementById('igfc-detail-bio');
+      if (bioEl) bioEl.textContent = 'Canlı detay bilgisi şu an alınamadı.';
+    }
   }
 
-  // SÜRÜM GEÇMİŞİ (CHANGELOG) PENCERESİ
+  function closeChangelogModal() {
+    document.getElementById('igfc-changelog-modal')?.closest('.igfc-submodal-overlay')?.remove();
+  }
+
   function openChangelogModal() {
-    const existing = document.getElementById('igfc-submodal');
-    if (existing) existing.remove();
+    closeAllSubModals();
 
-    const box = document.createElement('div');
-    box.id = 'igfc-submodal';
-    box.className = 'igfc-submodal-backdrop';
-
-    const versionsHtml = CHANGELOG_HISTORY.map(
-      (entry, index) => `
-      <div class="igfc-cl-card ${index === 0 ? 'igfc-cl-latest' : ''}">
-        <div class="igfc-cl-head">
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span class="igfc-cl-ver">${escapeHtml(entry.version)}</span>
-            <span class="igfc-cl-badge">${escapeHtml(entry.badge)}</span>
-          </div>
-          <span class="igfc-cl-date">${escapeHtml(entry.date)}</span>
-        </div>
-        <ul class="igfc-cl-list">
-          ${entry.items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
-        </ul>
-      </div>
-    `
-    ).join('');
-
-    box.innerHTML = `
-      <div class="igfc-submodal-box" onclick="event.stopPropagation()">
+    const overlay = document.createElement('div');
+    overlay.className = 'igfc-submodal-overlay';
+    overlay.innerHTML = `
+      <div id="igfc-changelog-modal" class="igfc-submodal-card">
         <div class="igfc-submodal-header">
-          <div style="display:flex; align-items:center; gap:10px;">
-            <span style="font-size:17px; font-weight:800;">🚀 Sürüm Geçmişi & Geliştirme Notları</span>
-            <span class="igfc-badge" style="cursor:default;">v1 → v10 Pro</span>
-          </div>
-          <button class="igfc-win-btn close" id="igfc-submodal-close">✕</button>
+          <h3>🚀 Sürüm Geçmişi (v10.2 Pro Ultimate)</h3>
+          <button id="igfc-changelog-close-btn" class="igfc-win-btn close" title="Kapat">✕</button>
         </div>
         <div class="igfc-submodal-body">
-          ${versionsHtml}
+          <ul class="igfc-changelog-list">
+            <li><strong>v10.2 Pro:</strong> 429 Too Many Requests hız sınırı koruması (0 ağ isteğiyle kendi hesabını çözümleme), <em>Son Takip Kişisini Çıkart</em> sihirbazı (son 1 ve son 5 takip/takipçi), Gelişmiş Karşılaştırma Modalı ve Ayarlar Modalı tamamlandı.</li>
+            <li><strong>v10 Pro:</strong> Kusursuz Responsive Header (<code>flex-wrap</code>), Modern Segmented Control sekmeler, Segmented Pill Toolbar ve Otomatik Sistem Teması (<code>system</code>) eklendi.</li>
+            <li><strong>v9 Pro:</strong> Günlük İşlem Kotası sayacı (<code>150/gün</code>) ve Avatar / Profil önbellekleme (<code>Map</code>) eklendi.</li>
+            <li><strong>v8:</strong> Şüpheli / Bot hesap analizi sekmesi, özel kullanıcı notları (<code>STORAGE_USER_NOTES</code>) ve işlem geçmişi kaydı eklendi.</li>
+            <li><strong>v7:</strong> Geçmiş tarama karşılaştırma motoru (<code>lostFollowers</code> &amp; <code>newFollowers</code>), Shift ile çoklu aralık seçimi ve gelişmiş filtreleme eklendi.</li>
+            <li><strong>v6:</strong> Güvenli / Dengeli / Hızlı / Ultra işlem modları ve Anti-Ban otomatik soğuma molası eklendi.</li>
+            <li><strong>v5:</strong> CORS uyumlu <code>fetch(blob)</code> profil resmi yükleyici, SVG yedek avatar ve CSV/JSON dışa aktarma eklendi.</li>
+          </ul>
         </div>
       </div>
     `;
 
-    box.addEventListener('click', () => box.remove());
-    box.querySelector('#igfc-submodal-close').addEventListener('click', () => box.remove());
-    document.getElementById('igfc-modal')?.appendChild(box);
+    const root = document.getElementById(EXISTING_ID);
+    (root || document.body).appendChild(overlay);
+    overlay.querySelector('#igfc-changelog-close-btn')?.addEventListener('click', closeChangelogModal);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeChangelogModal();
+    });
   }
 
-  // HESAP ANALİZİ, AKILLI KORUMA & TOPLU KULLANICI ADI İLE KORUMA PENCERESİ
+  function closeAnalyticsModal() {
+    document.getElementById('igfc-analytics-modal')?.closest('.igfc-submodal-overlay')?.remove();
+  }
+
   function openAnalyticsModal() {
-    const existing = document.getElementById('igfc-submodal');
-    if (existing) existing.remove();
+    closeAllSubModals();
 
-    const totalF = state.followers.length;
-    const totalFlw = state.following.length;
-    const ratio = totalFlw > 0 ? ((totalF / totalFlw) * 100).toFixed(1) : '0.0';
-    const mutualRate = totalFlw > 0 ? Math.round((state.mutuals.length / totalFlw) * 100) : 0;
-    const nonFollowRate =
-      totalFlw > 0 ? Math.round((state.nonFollowers.length / totalFlw) * 100) : 0;
+    const flwCount = state.followers.length;
+    const flwingCount = state.following.length;
+    const ratio = flwingCount > 0 ? (flwCount / flwingCount).toFixed(2) : '0.00';
+    const mutualRate = flwingCount > 0 ? Math.round((state.mutuals.length / flwingCount) * 100) : 0;
+    const nonFollowRate = flwingCount > 0 ? Math.round((state.nonFollowers.length / flwingCount) * 100) : 0;
+    const health = computeAccountHealth();
 
-    const box = document.createElement('div');
-    box.id = 'igfc-submodal';
-    box.className = 'igfc-submodal-backdrop';
-
-    box.innerHTML = `
-      <div class="igfc-submodal-box" onclick="event.stopPropagation()">
+    const overlay = document.createElement('div');
+    overlay.className = 'igfc-submodal-overlay';
+    overlay.innerHTML = `
+      <div id="igfc-analytics-modal" class="igfc-submodal-card wide">
         <div class="igfc-submodal-header">
-          <span style="font-size:17px; font-weight:800;">📊 Hesap Analizi, Akıllı Koruma & Araçlar</span>
-          <button class="igfc-win-btn close" id="igfc-submodal-close">✕</button>
+          <h3>🛠 Hesap Analizi, Akıllı Temizlik & Koruma Araçları</h3>
+          <button id="igfc-analytics-close-btn" class="igfc-win-btn close" title="Kapat">✕</button>
         </div>
         <div class="igfc-submodal-body">
-          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px;">
-            <div class="igfc-cl-card">
-              <div style="font-size:11.5px; color:var(--text-secondary);">Takipçi / Takip Oranı</div>
-              <div style="font-size:22px; font-weight:800; color:#3b82f6; margin-top:4px;">%${ratio}</div>
-              <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">${totalF} Takipçi / ${totalFlw} Takip</div>
-            </div>
-            <div class="igfc-cl-card">
-              <div style="font-size:11.5px; color:var(--text-secondary);">Karşılıklı Sadakat Oranı</div>
-              <div style="font-size:22px; font-weight:800; color:#10b981; margin-top:4px;">%${mutualRate}</div>
-              <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">${state.mutuals.length} karşılıklı hesap</div>
-            </div>
-            <div class="igfc-cl-card">
-              <div style="font-size:11.5px; color:var(--text-secondary);">Geri Takip Etmeyen Oranı</div>
-              <div style="font-size:22px; font-weight:800; color:#ef4444; margin-top:4px;">%${nonFollowRate}</div>
-              <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">${state.nonFollowers.length} kişi</div>
-            </div>
-            <div class="igfc-cl-card">
-              <div style="font-size:11.5px; color:var(--text-secondary);">Şüpheli / İnaktif Hesap</div>
-              <div style="font-size:22px; font-weight:800; color:#a855f7; margin-top:4px;">${state.suspicious.length}</div>
-              <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">Resimsiz / çok rakamlı</div>
+          <div class="igfc-detail-stats">
+            <div class="igfc-detail-stat"><span>Hesap Sağlık Puanı</span><strong style="color:#10b981;">${health.score}/100 (${health.grade})</strong></div>
+            <div class="igfc-detail-stat"><span>Takipçi / Takip Oranı</span><strong>${ratio}x</strong></div>
+            <div class="igfc-detail-stat"><span>Karşılıklı Sadakat Oranı</span><strong>%${mutualRate} (${state.mutuals.length})</strong></div>
+            <div class="igfc-detail-stat"><span>Geri Takip Etmeyen Oranı</span><strong>%${nonFollowRate} (${state.nonFollowers.length})</strong></div>
+            <div class="igfc-detail-stat"><span>Şüpheli / İnaktif Hesap</span><strong>${state.suspicious.length}</strong></div>
+          </div>
+
+          <div class="igfc-tools-section" style="background:var(--bg-secondary);padding:12px;border-radius:10px;border:1px solid var(--border);">
+            <h4>📊 Görsel Takip Dağılım Grafiği</h4>
+            <div style="display:flex;flex-direction:column;gap:6px;font-size:11.5px;">
+              <div>
+                <div style="display:flex;justify-content:space-between;"><span>🤝 Karşılıklı Takip (${state.mutuals.length})</span><strong>%${mutualRate}</strong></div>
+                <div style="height:8px;background:var(--bg-tertiary);border-radius:999px;overflow:hidden;margin-top:3px;">
+                  <div style="height:100%;width:${mutualRate}%;background:#10b981;"></div>
+                </div>
+              </div>
+              <div>
+                <div style="display:flex;justify-content:space-between;"><span>🚫 Geri Takip Etmeyenler (${state.nonFollowers.length})</span><strong>%${nonFollowRate}</strong></div>
+                <div style="height:8px;background:var(--bg-tertiary);border-radius:999px;overflow:hidden;margin-top:3px;">
+                  <div style="height:100%;width:${nonFollowRate}%;background:#ef4444;"></div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div class="igfc-cl-card">
-            <div style="font-size:13.5px; font-weight:700; margin-bottom:8px;">⚡ Tek Tıkla Akıllı Seçim & Koruma Sihirbazı</div>
-            <div style="display:flex; flex-wrap:wrap; gap:8px;">
-              <button class="igfc-btn igfc-btn-secondary" id="igfc-auto-wl-verified">✓ Onaylı Hesapları Koru (${
-                state.following.filter((u) => u.is_verified).length
-              })</button>
-              <button class="igfc-btn igfc-btn-secondary" id="igfc-auto-wl-mutuals">🤝 Karşılıklı Takipleşenleri Koru (${
-                state.mutuals.length
-              })</button>
-              <button class="igfc-btn" id="igfc-select-suspicious-btn">👻 Tüm Şüphelileri Seç (${
-                state.suspicious.length
-              })</button>
-              <button class="igfc-btn igfc-btn-danger" id="igfc-clear-wl-btn">🗑️ Korumayı Sıfırla</button>
+          <div class="igfc-tools-section">
+            <h4>⚡ Tek Tıkla Hızlı İşlem & Temizlik Sihirbazları</h4>
+            <div class="igfc-tools-btn-row">
+              <button id="igfc-tool-unfollow-last-btn" class="igfc-btn igfc-btn-danger">🎯 Son Takip Edilen Kişiyi Çıkart</button>
+              <button id="igfc-tool-remove-last-follower-btn" class="igfc-btn igfc-btn-warning">❌ Son Takipçiyi Çıkart</button>
+              <button id="igfc-safe-clean-wizard-btn" class="igfc-btn igfc-btn-primary">🧹 Tek Tıkla Güvenli Temizlik Sihirbazı</button>
+              <button id="igfc-select-notfollowing-btn" class="igfc-btn igfc-btn-secondary">🚫 Geri Takip Etmeyenleri Toplu Seç</button>
+              <button id="igfc-select-suspicious-btn" class="igfc-btn igfc-btn-secondary">👻 Şüpheli Hesapları Toplu Seç</button>
+              <button id="igfc-compare-btn" class="igfc-btn igfc-btn-secondary">🔀 Geçmiş Taramaları Karşılaştır</button>
             </div>
           </div>
 
-          <div class="igfc-cl-card">
-            <div style="font-size:13.5px; font-weight:700; margin-bottom:6px;">✍️ Kullanıcı Adı Yazarak Toplu Korumaya Ekle</div>
-            <div style="display:flex; gap:8px;">
-              <input type="text" id="igfc-wl-usernames-input" class="igfc-input" style="flex:1;" placeholder="Virgül veya boşlukla kullanıcı adları yazın (örn: galatasaray, akindil)..." />
-              <button class="igfc-btn igfc-btn-success" id="igfc-wl-usernames-btn">Korumaya Ekle</button>
+          <div class="igfc-tools-section">
+            <h4>★ Toplu Kullanıcı Adı ile Koruma (Whitelist) Ekleme</h4>
+            <div class="igfc-tools-inline">
+              <input id="igfc-wl-usernames-input" type="text" class="igfc-input" style="flex:1;" placeholder="kullanici1, kullanici2, @kullanici3..." />
+              <button id="igfc-wl-usernames-btn" class="igfc-btn igfc-btn-primary">Kullanıcı Adı İle Ekle</button>
+              <button id="igfc-clear-wl-btn" class="igfc-btn igfc-btn-danger">Koruma Listesini Sıfırla</button>
             </div>
           </div>
 
-          <div class="igfc-cl-card">
-            <div style="font-size:13.5px; font-weight:700; margin-bottom:6px;">🛡️ Koruma Listesi (Whitelist) JSON Yedekle / Geri Yükle</div>
-            <textarea id="igfc-wl-textarea" class="igfc-input" style="width:100%; height:64px; font-family:monospace; font-size:11.5px; resize:vertical;">${JSON.stringify(
-              [...state.whitelist]
-            )}</textarea>
-            <div style="display:flex; gap:8px; margin-top:8px;">
-              <button class="igfc-btn igfc-btn-success" id="igfc-wl-save-btn">Listeyi Güncelle & Kaydet</button>
-              <button class="igfc-btn igfc-btn-secondary" id="igfc-wl-copy-btn">Panoya Kopyala</button>
+          <div class="igfc-tools-section">
+            <h4>📦 Koruma Listesi JSON Yedekleme / İçe Aktarma</h4>
+            <textarea id="igfc-wl-textarea" rows="3" class="igfc-textarea">${escapeHtml(JSON.stringify([...state.whitelist]))}</textarea>
+            <div class="igfc-tools-btn-row">
+              <button id="igfc-wl-save-btn" class="igfc-btn igfc-btn-primary">JSON Formatında Kaydet</button>
+              <button id="igfc-wl-copy-btn" class="igfc-btn igfc-btn-secondary">Koruma Listesini Kopyala</button>
             </div>
           </div>
         </div>
       </div>
     `;
 
-    box.addEventListener('click', () => box.remove());
-    box.querySelector('#igfc-submodal-close').addEventListener('click', () => box.remove());
+    const root = document.getElementById(EXISTING_ID);
+    (root || document.body).appendChild(overlay);
 
-    box.querySelector('#igfc-auto-wl-verified').addEventListener('click', () => {
-      let added = 0;
-      for (const u of state.following) {
-        if (u.is_verified && !state.whitelist.has(String(u.id))) {
-          state.whitelist.add(String(u.id));
-          added++;
-        }
-      }
-      saveWhitelist();
-      computeCategories();
-      renderList();
-      showToast(`${added} onaylı hesap korumaya alındı!`, 'success');
-      box.remove();
+    overlay.querySelector('#igfc-analytics-close-btn')?.addEventListener('click', closeAnalyticsModal);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeAnalyticsModal();
     });
 
-    box.querySelector('#igfc-auto-wl-mutuals').addEventListener('click', () => {
-      let added = 0;
-      for (const u of state.mutuals) {
-        if (!state.whitelist.has(String(u.id))) {
-          state.whitelist.add(String(u.id));
-          added++;
-        }
-      }
-      saveWhitelist();
-      computeCategories();
-      renderList();
-      showToast(`${added} karşılıklı hesap korumaya alındı!`, 'success');
-      box.remove();
+    overlay.querySelector('#igfc-tool-unfollow-last-btn')?.addEventListener('click', async () => {
+      closeAnalyticsModal();
+      await unfollowLastFollowedPerson();
     });
 
-    box.querySelector('#igfc-select-suspicious-btn').addEventListener('click', () => {
-      state.activeTab = 'suspicious';
+    overlay.querySelector('#igfc-tool-remove-last-follower-btn')?.addEventListener('click', async () => {
+      closeAnalyticsModal();
+      await removeLastFollowerPerson();
+    });
+
+    overlay.querySelector('#igfc-safe-clean-wizard-btn')?.addEventListener('click', () => {
+      closeAnalyticsModal();
+      switchTab('nonFollowers');
       state.selectedIds.clear();
-      for (const u of state.suspicious) state.selectedIds.add(String(u.id));
-      document.querySelectorAll('.igfc-tab').forEach((b) => {
-        b.classList.toggle('active', b.dataset.tab === 'suspicious');
-      });
-      updateBulkButtons();
+      // Güvenli temizlik: Mavi tikli olmayan, koruma listesinde olmayan geri takip etmeyenlerden ilk 25 tanesini seçer
+      const candidates = state.nonFollowers.filter((u) => !u.is_verified && !isWhitelisted(u.id)).slice(0, 25);
+      candidates.forEach((u) => state.selectedIds.add(String(u.id)));
       renderList();
-      showToast(`${state.suspicious.length} şüpheli hesap seçildi.`, 'info');
-      box.remove();
+      updateBulkButtons();
+      showToast(`Güvenli temizlik için ${candidates.length} onaylanmamış geri takip etmeyen hesap seçildi.`, 'info');
     });
 
-    box.querySelector('#igfc-wl-usernames-btn').addEventListener('click', () => {
-      const raw = box.querySelector('#igfc-wl-usernames-input').value;
+    overlay.querySelector('#igfc-select-notfollowing-btn')?.addEventListener('click', () => {
+      closeAnalyticsModal();
+      switchTab('nonFollowers');
+      state.nonFollowers.forEach((u) => {
+        if (!isWhitelisted(u.id)) state.selectedIds.add(String(u.id));
+      });
+      renderList();
+      updateBulkButtons();
+    });
+
+    overlay.querySelector('#igfc-select-suspicious-btn')?.addEventListener('click', () => {
+      closeAnalyticsModal();
+      switchTab('suspicious');
+      state.suspicious.forEach((u) => {
+        if (!isWhitelisted(u.id)) state.selectedIds.add(String(u.id));
+      });
+      renderList();
+      updateBulkButtons();
+    });
+
+    overlay.querySelector('#igfc-compare-btn')?.addEventListener('click', () => {
+      closeAnalyticsModal();
+      openCompareModal();
+    });
+
+    overlay.querySelector('#igfc-wl-usernames-btn')?.addEventListener('click', () => {
+      const raw = overlay.querySelector('#igfc-wl-usernames-input')?.value || '';
       const names = raw
         .split(/[\s,;]+/)
         .map((s) => s.trim().replace(/^@/, '').toLowerCase())
         .filter(Boolean);
-      if (names.length === 0) return;
+      if (!names.length) return;
+
       const allKnown = [...state.following, ...state.followers];
       let added = 0;
-      for (const u of allKnown) {
-        if (names.includes(String(u.username || '').toLowerCase())) {
-          state.whitelist.add(String(u.id));
+      for (const uname of names) {
+        const match = allKnown.find((u) => (u.username || '').toLowerCase() === uname);
+        if (match) {
+          state.whitelist.add(String(match.id));
           added++;
         }
       }
       saveWhitelist();
-      computeCategories();
+      const ta = overlay.querySelector('#igfc-wl-textarea');
+      if (ta) ta.value = JSON.stringify([...state.whitelist]);
+      updateStatsUI();
       renderList();
-      showToast(`${added} eşleşen kullanıcı korumaya alındı ★`, 'success');
-      box.remove();
+      showToast(`${added} kullanıcı koruma listesine eklendi.`, 'success');
     });
 
-    box.querySelector('#igfc-clear-wl-btn').addEventListener('click', () => {
+    overlay.querySelector('#igfc-clear-wl-btn')?.addEventListener('click', () => {
       state.whitelist.clear();
       saveWhitelist();
-      computeCategories();
+      const ta = overlay.querySelector('#igfc-wl-textarea');
+      if (ta) ta.value = '[]';
+      updateStatsUI();
       renderList();
-      showToast('Koruma listesi sıfırlandı.', 'warn');
-      box.remove();
+      showToast('Koruma listesi sıfırlandı.', 'info');
     });
 
-    box.querySelector('#igfc-wl-save-btn').addEventListener('click', () => {
+    overlay.querySelector('#igfc-wl-save-btn')?.addEventListener('click', () => {
       try {
-        const val = JSON.parse(box.querySelector('#igfc-wl-textarea').value.trim() || '[]');
-        if (Array.isArray(val)) {
-          state.whitelist = new Set(val.map(String));
-          saveWhitelist();
-          computeCategories();
-          renderList();
-          showToast(`Koruma listesi güncellendi (${state.whitelist.size} kişi).`, 'success');
-          box.remove();
-        }
+        const arr = JSON.parse(overlay.querySelector('#igfc-wl-textarea')?.value || '[]');
+        if (!Array.isArray(arr)) throw new Error('Dizi değil');
+        saveWhitelist(arr);
+        updateStatsUI();
+        renderList();
+        showToast('Koruma listesi güncellendi.', 'success');
       } catch (_) {
         showToast('Geçersiz JSON formatı!', 'error');
       }
     });
 
-    box.querySelector('#igfc-wl-copy-btn').addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(box.querySelector('#igfc-wl-textarea').value);
-        showToast('Koruma listesi panoya kopyalandı!', 'success');
-      } catch (_) {}
+    overlay.querySelector('#igfc-wl-copy-btn')?.addEventListener('click', () => {
+      navigator.clipboard.writeText(JSON.stringify([...state.whitelist]));
+      showToast('Koruma listesi panoya kopyalandı.', 'success');
     });
-
-    document.getElementById('igfc-modal')?.appendChild(box);
   }
 
-  /**
-   * 8-YÖNLÜ KENARDAN VE KÖŞEDEN BOYUTLANDIRMA + SÜRÜKLENEBİLİR PENCERE YÖNETİCİSİ
-   */
-  function initWindowDragAndResize(modalEl, headerEl) {
-    let isDragging = false;
-    let isResizing = false;
-    let currentDir = '';
-    let startX = 0,
-      startY = 0,
-      startW = 0,
-      startH = 0,
-      startL = 0,
-      startT = 0;
+  function closeCompareModal() {
+    document.getElementById('igfc-compare-modal')?.closest('.igfc-submodal-overlay')?.remove();
+  }
 
-    const ensureAbsolutePosition = () => {
-      const rect = modalEl.getBoundingClientRect();
-      if (modalEl.style.position !== 'fixed') {
-        modalEl.style.position = 'fixed';
-        modalEl.style.left = `${rect.left}px`;
-        modalEl.style.top = `${rect.top}px`;
-        modalEl.style.width = `${rect.width}px`;
-        modalEl.style.height = `${rect.height}px`;
-        modalEl.style.margin = '0';
+  function openCompareModal() {
+    closeAllSubModals();
+    getScanHistory();
+
+    const historyOptions = state.scanHistory
+      .map((h, i) => {
+        const dt = new Date(h.timestamp).toLocaleString('tr-TR');
+        return `<option value="${i}">@${escapeHtml(h.username)} — ${escapeHtml(dt)} (Takipçi: ${h.followersCount}, Takip: ${h.followingCount})</option>`;
+      })
+      .join('');
+
+    const overlay = document.createElement('div');
+    overlay.className = 'igfc-submodal-overlay';
+    overlay.innerHTML = `
+      <div id="igfc-compare-modal" class="igfc-submodal-card wide">
+        <div class="igfc-submodal-header">
+          <h3>🔀 Tarama Geçmişi & JSON Karşılaştırma Aracı</h3>
+          <button id="igfc-compare-close-btn" class="igfc-win-btn close" title="Kapat">✕</button>
+        </div>
+        <div class="igfc-submodal-body">
+          <p class="igfc-submodal-desc">
+            Mevcut taramanızı daha önce kaydedilmiş bir tarama geçmişiyle veya dışa aktardığınız bir JSON raporuyla karşılaştırarak takipten çıkanları ve yeni gelenleri tespit edin.
+          </p>
+
+          <div class="igfc-tools-section">
+            <h4>1. Kayıtlı Tarama Geçmişinden Seç</h4>
+            <div class="igfc-tools-inline">
+              <select id="igfc-compare-history-select" class="igfc-select" style="flex:1;">
+                ${historyOptions || '<option value="">Kayıtlı geçmiş tarama bulunamadı</option>'}
+              </select>
+              <button id="igfc-run-compare-btn" class="igfc-btn igfc-btn-primary" ${state.scanHistory.length === 0 ? 'disabled' : ''}>🔍 Geçmiş İle Karşılaştır</button>
+              <button id="igfc-clear-history-btn" class="igfc-btn igfc-btn-danger">🗑 Geçmişi Sil</button>
+            </div>
+          </div>
+
+          <div class="igfc-tools-section">
+            <h4>2. Veya Eski JSON Raporunu Yapıştırıp Karşılaştır</h4>
+            <textarea id="igfc-compare-json-input" rows="4" class="igfc-textarea" placeholder='Daha önce indirdiğiniz JSON içeriğini buraya yapıştırın ({"followers": [...]})...'></textarea>
+            <div class="igfc-tools-btn-row">
+              <button id="igfc-run-json-compare-btn" class="igfc-btn igfc-btn-primary">📊 JSON Verisi İle Karşılaştır</button>
+            </div>
+          </div>
+
+          <div id="igfc-compare-results" style="margin-top:12px;"></div>
+        </div>
+      </div>
+    `;
+
+    const root = document.getElementById(EXISTING_ID);
+    (root || document.body).appendChild(overlay);
+
+    overlay.querySelector('#igfc-compare-close-btn')?.addEventListener('click', closeCompareModal);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeCompareModal();
+    });
+
+    const applyComparison = (oldFollowers) => {
+      if (!Array.isArray(oldFollowers)) {
+        showToast('Geçerli bir takipçi listesi bulunamadı!', 'error');
+        return;
       }
+      const currentIds = new Set(state.followers.map((u) => String(u.id)));
+      const oldIds = new Set(oldFollowers.map((u) => String(u.id)));
+
+      state.lostFollowers = oldFollowers.filter((u) => !currentIds.has(String(u.id)));
+      state.newFollowers = state.followers.filter((u) => !oldIds.has(String(u.id)));
+      updateStatsUI();
+      saveLastScanCache();
+
+      const resBox = document.getElementById('igfc-compare-results');
+      if (resBox) {
+        resBox.innerHTML = `
+          <div class="igfc-detail-stats">
+            <div class="igfc-detail-stat"><span>📉 Takipten Çıkanlar</span><strong>${state.lostFollowers.length} kişi</strong></div>
+            <div class="igfc-detail-stat"><span>📈 Yeni Gelen Takipçiler</span><strong>${state.newFollowers.length} kişi</strong></div>
+          </div>
+          <div class="igfc-tools-btn-row">
+            <button id="igfc-goto-lost-btn" class="igfc-btn igfc-btn-danger">📉 Yeni Çıkanlar Sekmesine Git (${state.lostFollowers.length})</button>
+            <button id="igfc-goto-new-btn" class="igfc-btn igfc-btn-success">📈 Yeni Gelenler Sekmesine Git (${state.newFollowers.length})</button>
+          </div>
+        `;
+        resBox.querySelector('#igfc-goto-lost-btn')?.addEventListener('click', () => {
+          closeCompareModal();
+          switchTab('lostFollowers');
+        });
+        resBox.querySelector('#igfc-goto-new-btn')?.addEventListener('click', () => {
+          closeCompareModal();
+          switchTab('newFollowers');
+        });
+      }
+      showToast(`Karşılaştırma tamamlandı: ${state.lostFollowers.length} çıkan, ${state.newFollowers.length} yeni takipçi.`, 'success');
     };
 
-    headerEl.addEventListener('mousedown', (e) => {
-      if (state.isMaximized || state.isMinimized) return;
-      if (e.target.closest('button, select, input, .igfc-badge')) return;
-      ensureAbsolutePosition();
-      isDragging = true;
-      startX = e.clientX;
-      startY = e.clientY;
-      const rect = modalEl.getBoundingClientRect();
-      startL = rect.left;
-      startT = rect.top;
-      modalEl.style.transition = 'none';
-      e.preventDefault();
+    overlay.querySelector('#igfc-run-compare-btn')?.addEventListener('click', () => {
+      const idx = Number(overlay.querySelector('#igfc-compare-history-select')?.value || 0);
+      const selected = state.scanHistory[idx];
+      if (selected && Array.isArray(selected.followers)) {
+        applyComparison(selected.followers);
+      }
     });
+
+    overlay.querySelector('#igfc-clear-history-btn')?.addEventListener('click', () => {
+      clearScanHistory();
+      closeCompareModal();
+    });
+
+    overlay.querySelector('#igfc-run-json-compare-btn')?.addEventListener('click', () => {
+      try {
+        const parsed = JSON.parse(overlay.querySelector('#igfc-compare-json-input')?.value || '{}');
+        const list = Array.isArray(parsed) ? parsed : parsed.followers || parsed.nonFollowers;
+        applyComparison(list);
+      } catch (_) {
+        showToast('JSON ayrıştırılamadı! Geçerli bir JSON yapıştırın.', 'error');
+      }
+    });
+  }
+
+  function closeSettingsModal() {
+    document.getElementById('igfc-settings-modal')?.closest('.igfc-submodal-overlay')?.remove();
+  }
+
+  function openSettingsModal() {
+    closeAllSubModals();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'igfc-submodal-overlay';
+    overlay.innerHTML = `
+      <div id="igfc-settings-modal" class="igfc-submodal-card">
+        <div class="igfc-submodal-header">
+          <h3>⚙ Ayarlar, Anti-Ban & Önbellek Yönetimi</h3>
+          <button id="igfc-settings-close-btn" class="igfc-win-btn close" title="Kapat">✕</button>
+        </div>
+        <div class="igfc-submodal-body">
+          <div class="igfc-tools-section">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input id="igfc-set-cooldown" type="checkbox" ${state.autoCooldown ? 'checked' : ''} />
+              <span>🛡️ Anti-Ban Otomatik Soğuma Molası (Toplu işlemlerde her sette otomatik mola ver)</span>
+            </label>
+          </div>
+
+          <div class="igfc-tools-section">
+            <label for="igfc-set-dailymax">Günlük Güvenli İşlem Kotası Sınırı:</label>
+            <input id="igfc-set-dailymax" type="number" min="20" max="500" class="igfc-input" value="${state.dailyLimitMax || 150}" />
+          </div>
+
+          <div class="igfc-tools-section">
+            <h4>🗄️ Önbellek ve Veri Yönetimi</h4>
+            <div class="igfc-tools-btn-row">
+              <button id="igfc-save-settings-btn" class="igfc-btn igfc-btn-primary">💾 Ayarları Kaydet</button>
+              <button id="igfc-reset-quota-btn" class="igfc-btn igfc-btn-secondary">🔄 Günlük Kotayı Sıfırla</button>
+              <button id="igfc-clear-cache-btn" class="igfc-btn igfc-btn-danger">🗑 Önbelleği ve Geçmişi Temizle</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const root = document.getElementById(EXISTING_ID);
+    (root || document.body).appendChild(overlay);
+
+    overlay.querySelector('#igfc-settings-close-btn')?.addEventListener('click', closeSettingsModal);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeSettingsModal();
+    });
+
+    overlay.querySelector('#igfc-save-settings-btn')?.addEventListener('click', () => {
+      state.autoCooldown = Boolean(overlay.querySelector('#igfc-set-cooldown')?.checked);
+      state.dailyLimitMax = Math.max(20, Number(overlay.querySelector('#igfc-set-dailymax')?.value) || 150);
+      saveSettings();
+      updateQuotaBadgeUI();
+      showToast('Ayarlar kaydedildi.', 'success');
+      closeSettingsModal();
+    });
+
+    overlay.querySelector('#igfc-reset-quota-btn')?.addEventListener('click', () => {
+      resetTodayQuota();
+      showToast('Günlük işlem kotası sıfırlandı.', 'info');
+    });
+
+    overlay.querySelector('#igfc-clear-cache-btn')?.addEventListener('click', () => {
+      clearScanCache();
+      clearScanHistory();
+      state.unfollowHistory = [];
+      localStorage.removeItem(STORAGE_UNFOLLOW_LOG);
+      updateStatsUI();
+      renderList();
+      closeSettingsModal();
+    });
+  }
+
+  // ============================================================================
+  // 8-YÖNLÜ KENARDAN VE KÖŞEDEN BOYUTLANDIRMA + SÜRÜKLENEBİLİR PENCERE YÖNETİCİSİ
+  // ============================================================================
+
+  function initWindowDragAndResize(modalEl, headerEl) {
+    if (!modalEl || !headerEl) return;
+
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let initLeft = 0;
+    let initTop = 0;
+
+    headerEl.addEventListener('mousedown', (e) => {
+      if (e.target.closest('button, select, input, a')) return;
+      if (state.isMaximized) return;
+      isDragging = true;
+      const rect = modalEl.getBoundingClientRect();
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      initLeft = rect.left;
+      initTop = rect.top;
+      modalEl.style.transform = 'none';
+      modalEl.style.left = `${initLeft}px`;
+      modalEl.style.top = `${initTop}px`;
+      document.body.style.userSelect = 'none';
+    });
+
+    let activeResizeDir = null;
+    let rStartX = 0;
+    let rStartY = 0;
+    let rRect = null;
 
     modalEl.querySelectorAll('.igfc-resizer').forEach((handle) => {
       handle.addEventListener('mousedown', (e) => {
         if (state.isMaximized || state.isMinimized) return;
         e.stopPropagation();
-        e.preventDefault();
-        ensureAbsolutePosition();
-        isResizing = true;
-        currentDir = handle.dataset.dir;
-        startX = e.clientX;
-        startY = e.clientY;
-        const rect = modalEl.getBoundingClientRect();
-        startW = rect.width;
-        startH = rect.height;
-        startL = rect.left;
-        startT = rect.top;
-        modalEl.style.transition = 'none';
+        activeResizeDir = handle.dataset.dir;
+        rStartX = e.clientX;
+        rStartY = e.clientY;
+        rRect = modalEl.getBoundingClientRect();
+        modalEl.style.transform = 'none';
+        modalEl.style.left = `${rRect.left}px`;
+        modalEl.style.top = `${rRect.top}px`;
+        document.body.style.userSelect = 'none';
       });
     });
 
     window.addEventListener('mousemove', (e) => {
       if (isDragging) {
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        const newLeft = Math.max(0, Math.min(window.innerWidth - 120, startL + dx));
-        const newTop = Math.max(0, Math.min(window.innerHeight - 60, startT + dy));
+        const dx = e.clientX - dragStartX;
+        const dy = e.clientY - dragStartY;
+        const newLeft = Math.max(0, Math.min(window.innerWidth - 120, initLeft + dx));
+        const newTop = Math.max(0, Math.min(window.innerHeight - 60, initTop + dy));
         modalEl.style.left = `${newLeft}px`;
         modalEl.style.top = `${newTop}px`;
-      } else if (isResizing) {
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        const minW = 540;
-        const minH = 420;
+      } else if (activeResizeDir && rRect) {
+        const dx = e.clientX - rStartX;
+        const dy = e.clientY - rStartY;
+        let { left, top, width, height } = rRect;
+        const minW = 500;
+        const minH = 380;
 
-        let newW = startW;
-        let newH = startH;
-        let newL = startL;
-        let newT = startT;
-
-        if (currentDir.includes('e')) {
-          newW = Math.max(minW, Math.min(window.innerWidth - startL, startW + dx));
-        }
-        if (currentDir.includes('s')) {
-          newH = Math.max(minH, Math.min(window.innerHeight - startT, startH + dy));
-        }
-        if (currentDir.includes('w')) {
-          const possibleW = startW - dx;
-          if (possibleW >= minW && startL + dx >= 0) {
-            newW = possibleW;
-            newL = startL + dx;
+        if (activeResizeDir.includes('e')) width = Math.max(minW, width + dx);
+        if (activeResizeDir.includes('s')) height = Math.max(minH, height + dy);
+        if (activeResizeDir.includes('w')) {
+          const possibleW = width - dx;
+          if (possibleW >= minW) {
+            width = possibleW;
+            left += dx;
           }
         }
-        if (currentDir.includes('n')) {
-          const possibleH = startH - dy;
-          if (possibleH >= minH && startT + dy >= 0) {
-            newH = possibleH;
-            newT = startT + dy;
+        if (activeResizeDir.includes('n')) {
+          const possibleH = height - dy;
+          if (possibleH >= minH) {
+            height = possibleH;
+            top += dy;
           }
         }
 
-        modalEl.style.width = `${newW}px`;
-        modalEl.style.height = `${newH}px`;
-        modalEl.style.left = `${newL}px`;
-        modalEl.style.top = `${newT}px`;
+        modalEl.style.left = `${left}px`;
+        modalEl.style.top = `${top}px`;
+        modalEl.style.width = `${width}px`;
+        modalEl.style.height = `${height}px`;
       }
     });
 
     window.addEventListener('mouseup', () => {
-      if (isDragging || isResizing) {
+      if (isDragging || activeResizeDir) {
         isDragging = false;
-        isResizing = false;
+        activeResizeDir = null;
+        document.body.style.userSelect = '';
       }
     });
   }
 
-  // Arayüz (UI) Oluşturma
+  // ============================================================================
+  // TEMA VE ANA ARAYÜZ (UI) OLUŞTURMA
+  // ============================================================================
+
+  function resolveEffectiveTheme() {
+    if (state.theme && state.theme !== 'system') return state.theme;
+    const igDark =
+      document.documentElement.classList.contains('_aa4d') ||
+      document.documentElement.getAttribute('data-theme') === 'dark' ||
+      window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+    return igDark ? 'midnight' : 'light';
+  }
+
+  function applyTheme() {
+    const modal = document.getElementById('igfc-modal');
+    if (!modal) return;
+    const eff = resolveEffectiveTheme();
+    modal.setAttribute('data-theme', eff);
+  }
+
+  function applyZoom() {
+    const modal = document.getElementById('igfc-modal');
+    if (!modal) return;
+    modal.style.setProperty('--igfc-scale', String(state.uiScale / 100));
+    const zoomLabel = document.getElementById('igfc-zoom-label');
+    if (zoomLabel) zoomLabel.textContent = `%${state.uiScale}`;
+  }
+
+  function toggleMinimize() {
+    const modal = document.getElementById('igfc-modal');
+    if (!modal) return;
+    state.isMinimized = !state.isMinimized;
+    modal.classList.toggle('minimized', state.isMinimized);
+  }
+
+  function toggleMaximize() {
+    const modal = document.getElementById('igfc-modal');
+    if (!modal) return;
+    state.isMaximized = !state.isMaximized;
+    modal.classList.toggle('maximized', state.isMaximized);
+  }
+
+  function toggleFooterDrawer() {
+    state.isLogOpen = !state.isLogOpen;
+    document.getElementById('igfc-log-list')?.classList.toggle('open', state.isLogOpen);
+    const arrow = document.getElementById('igfc-footer-arrow');
+    if (arrow) arrow.textContent = state.isLogOpen ? '▼ Günlüğü Gizle' : '▲ Günlüğü Göster';
+  }
+
+  function updateCacheInfoUI() {
+    const el = document.getElementById('igfc-cache-info');
+    if (!el) return;
+    if (state.username && state.lastScannedAt) {
+      const dt = new Date(state.lastScannedAt).toLocaleString('tr-TR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+      });
+      el.innerHTML = `(Son: @${escapeHtml(state.username)} • ${escapeHtml(dt)}) <button id="igfc-clear-last-scan-btn" class="igfc-clear-cache-btn" title="Son taranan kişi önbellek kaydını çıkart / temizle">✕</button>`;
+      el.querySelector('#igfc-clear-last-scan-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        clearScanCache();
+      });
+    } else {
+      el.textContent = '';
+    }
+  }
+
   function createUI() {
-    const effectiveTheme = resolveEffectiveTheme(state.theme);
     const root = document.createElement('div');
     root.id = EXISTING_ID;
+
     root.innerHTML = `
       <style>
         #${EXISTING_ID} {
-          position: fixed;
-          inset: 0;
-          z-index: 999999;
-          background: rgba(6, 9, 15, 0.78);
-          backdrop-filter: blur(10px);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-          user-select: none;
-        }
-        #${EXISTING_ID}.minimized-root {
-          inset: auto 24px 24px auto !important;
-          width: auto !important;
-          height: auto !important;
-          background: transparent !important;
-          backdrop-filter: none !important;
-          pointer-events: none !important;
-        }
-        #${EXISTING_ID} * {
-          box-sizing: border-box;
-        }
-
-        /* Özel İnce ve Şık Scrollbar */
-        #${EXISTING_ID} ::-webkit-scrollbar {
-          width: 7px;
-          height: 7px;
-        }
-        #${EXISTING_ID} ::-webkit-scrollbar-track {
-          background: rgba(15, 23, 42, 0.25);
-          border-radius: 999px;
-        }
-        #${EXISTING_ID} ::-webkit-scrollbar-thumb {
-          background: rgba(100, 116, 139, 0.45);
-          border-radius: 999px;
-        }
-        #${EXISTING_ID} ::-webkit-scrollbar-thumb:hover {
-          background: rgba(148, 163, 184, 0.8);
-        }
-
-        /* Ana Pencere ve Tam Tema Değişkenleri (Açık ve Koyu Mod Tam Uyumlu) */
-        .igfc-modal {
-          --bg-main: linear-gradient(180deg, #0f172a 0%, #0b1120 100%);
-          --bg-header: rgba(30, 41, 59, 0.92);
-          --bg-sub: rgba(15, 23, 42, 0.88);
-          --bg-card: rgba(24, 34, 53, 0.9);
-          --bg-card-hover: rgba(32, 46, 72, 0.98);
-          --bg-input: #0b1120;
-          --bg-tab-bar: rgba(15, 23, 42, 0.95);
-          --bg-tab-inactive: rgba(30, 41, 59, 0.75);
-          --border-color: rgba(51, 65, 85, 0.8);
+          --bg-primary: #0f172a;
+          --bg-secondary: #1e293b;
+          --bg-tertiary: #334155;
           --text-primary: #f8fafc;
           --text-secondary: #94a3b8;
-          --btn-sec-bg: rgba(51, 65, 85, 0.7);
-          --btn-sec-text: #e2e8f0;
-
-          width: min(1280px, 95vw);
-          height: min(890px, 92vh);
-          min-width: 540px;
-          min-height: 420px;
-          background: var(--bg-main);
-          color: var(--text-primary);
-          border: 1px solid rgba(59, 130, 246, 0.45);
-          border-radius: 18px;
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-          box-shadow: 0 30px 70px -15px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.06);
-          position: relative;
-          pointer-events: auto;
+          --accent: #6366f1;
+          --accent-hover: #4f46e5;
+          --danger: #ef4444;
+          --warning: #f59e0b;
+          --success: #10b981;
+          --border: rgba(148, 163, 184, 0.18);
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          z-index: 999999;
         }
-
-        /* Tarayıcı Açık (Light) Teması */
-        .igfc-modal[data-theme="light"] {
-          --bg-main: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
-          --bg-header: rgba(255, 255, 255, 0.95);
-          --bg-sub: rgba(241, 245, 249, 0.92);
-          --bg-card: #ffffff;
-          --bg-card-hover: #f8fafc;
-          --bg-input: #ffffff;
-          --bg-tab-bar: #e2e8f0;
-          --bg-tab-inactive: #ffffff;
-          --border-color: #cbd5e1;
+        #igfc-modal[data-theme="light"] {
+          --bg-primary: #ffffff;
+          --bg-secondary: #f1f5f9;
+          --bg-tertiary: #e2e8f0;
           --text-primary: #0f172a;
           --text-secondary: #475569;
-          --btn-sec-bg: #e2e8f0;
-          --btn-sec-text: #1e293b;
-          box-shadow: 0 25px 60px -15px rgba(15, 23, 42, 0.28), 0 0 0 1px rgba(15, 23, 42, 0.08);
+          --accent: #4f46e5;
+          --accent-hover: #4338ca;
+          --border: rgba(15, 23, 42, 0.12);
         }
-        .igfc-modal[data-theme="oled"] {
-          --bg-main: linear-gradient(180deg, #050505 0%, #000000 100%);
-          --bg-header: rgba(16, 16, 18, 0.96);
-          --bg-sub: rgba(10, 10, 12, 0.95);
-          --bg-card: rgba(18, 18, 22, 0.95);
-          --bg-card-hover: rgba(28, 28, 35, 0.98);
-          --bg-input: #08080a;
-          --border-color: rgba(45, 45, 55, 0.85);
+        #igfc-modal[data-theme="oled"] {
+          --bg-primary: #000000;
+          --bg-secondary: #0a0a0a;
+          --bg-tertiary: #171717;
+          --text-primary: #fafafa;
+          --text-secondary: #a3a3a3;
+          --accent: #8b5cf6;
+          --border: rgba(255, 255, 255, 0.14);
         }
-        .igfc-modal[data-theme="cyber"] {
-          --bg-main: linear-gradient(180deg, #170f2e 0%, #0d071c 100%);
-          --bg-header: rgba(38, 22, 74, 0.9);
-          --bg-sub: rgba(24, 14, 48, 0.9);
-          --bg-card: rgba(34, 21, 66, 0.88);
-          --bg-card-hover: rgba(48, 30, 92, 0.95);
-          --bg-input: #120a26;
-          --border-color: rgba(139, 92, 246, 0.42);
+        #igfc-modal[data-theme="cyber"] {
+          --bg-primary: #090d16;
+          --bg-secondary: #131b2e;
+          --bg-tertiary: #1e293b;
+          --text-primary: #e0f2fe;
+          --text-secondary: #38bdf8;
+          --accent: #ec4899;
+          --border: rgba(56, 189, 248, 0.25);
         }
-        .igfc-modal[data-theme="sunset"] {
-          --bg-main: linear-gradient(180deg, #1f1124 0%, #120917 100%);
-          --bg-header: rgba(48, 22, 46, 0.9);
-          --bg-sub: rgba(32, 14, 32, 0.9);
-          --bg-card: rgba(42, 20, 42, 0.88);
-          --bg-card-hover: rgba(58, 28, 56, 0.95);
-          --bg-input: #160b18;
-          --border-color: rgba(236, 72, 153, 0.42);
+        #igfc-modal[data-theme="sunset"] {
+          --bg-primary: #1c1018;
+          --bg-secondary: #2d1926;
+          --bg-tertiary: #422437;
+          --text-primary: #fff1f2;
+          --text-secondary: #fda4af;
+          --accent: #f97316;
+          --border: rgba(251, 113, 133, 0.22);
         }
 
-        /* 8 Yönlü Kenar ve Köşe Boyutlandırma Tutamaçları */
-        .igfc-resizer { position: absolute; z-index: 40; }
-        .igfc-resizer-n  { top: 0; left: 10px; right: 10px; height: 6px; cursor: ns-resize; }
-        .igfc-resizer-s  { bottom: 0; left: 10px; right: 10px; height: 6px; cursor: ns-resize; }
-        .igfc-resizer-e  { right: 0; top: 10px; bottom: 10px; width: 6px; cursor: ew-resize; }
-        .igfc-resizer-w  { left: 0; top: 10px; bottom: 10px; width: 6px; cursor: ew-resize; }
-        .igfc-resizer-ne { top: 0; right: 0; width: 12px; height: 12px; cursor: nesw-resize; }
-        .igfc-resizer-nw { top: 0; left: 0; width: 12px; height: 12px; cursor: nwse-resize; }
-        .igfc-resizer-se { bottom: 0; right: 0; width: 14px; height: 14px; cursor: nwse-resize; }
-        .igfc-resizer-sw { bottom: 0; left: 0; width: 12px; height: 12px; cursor: nesw-resize; }
-
-        .igfc-modal.maximized {
-          position: fixed !important;
-          inset: 0 !important;
-          width: 100vw !important;
-          height: 100vh !important;
-          max-width: 100vw !important;
-          max-height: 100vh !important;
-          border-radius: 0 !important;
-          border: none !important;
+        #igfc-modal {
+          position: fixed;
+          top: 32px;
+          left: calc(50% - 540px);
+          width: 1080px;
+          height: 750px;
+          max-width: 96vw;
+          max-height: 92vh;
+          background: var(--bg-primary);
+          color: var(--text-primary);
+          border: 1px solid var(--border);
+          border-radius: 16px;
+          box-shadow: 0 25px 60px rgba(0, 0, 0, 0.55);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          z-index: 999999;
+          font-size: calc(13px * var(--igfc-scale, 1));
         }
-        .igfc-modal.maximized .igfc-resizer { display: none !important; }
-
-        .igfc-modal.minimized {
-          position: relative !important;
-          left: auto !important;
-          top: auto !important;
+        #igfc-modal.maximized {
+          top: 8px !important;
+          left: 8px !important;
+          width: calc(100vw - 16px) !important;
+          height: calc(100vh - 16px) !important;
+        }
+        #igfc-modal.minimized {
+          height: 52px !important;
           width: 440px !important;
-          height: 58px !important;
-          min-width: 360px !important;
-          min-height: 58px !important;
-          border-radius: 999px !important;
-          border: 2px solid #3b82f6 !important;
-          box-shadow: 0 15px 40px rgba(0, 0, 0, 0.9), 0 0 20px rgba(59, 130, 246, 0.35) !important;
+          overflow: hidden !important;
         }
-        .igfc-modal.minimized .igfc-body-wrap,
-        .igfc-modal.minimized .igfc-resizer,
-        .igfc-modal.minimized .igfc-hide-on-min {
+        #igfc-modal.minimized .igfc-hide-on-min,
+        #igfc-modal.minimized #igfc-body-wrap,
+        #igfc-modal.minimized #igfc-footer-drawer {
           display: none !important;
         }
-        .igfc-modal.minimized .igfc-header {
-          padding: 0 18px !important;
-          height: 100% !important;
-          border-bottom: none !important;
-          cursor: pointer !important;
-          flex-wrap: nowrap !important;
-        }
 
-        .igfc-body-wrap {
-          display: flex;
-          flex-direction: column;
-          flex: 1;
-          overflow: hidden;
-        }
+        .igfc-resizer { position: absolute; z-index: 10; }
+        .igfc-resizer-n { top: 0; left: 8px; right: 8px; height: 6px; cursor: ns-resize; }
+        .igfc-resizer-s { bottom: 0; left: 8px; right: 8px; height: 6px; cursor: ns-resize; }
+        .igfc-resizer-e { right: 0; top: 8px; bottom: 8px; width: 6px; cursor: ew-resize; }
+        .igfc-resizer-w { left: 0; top: 8px; bottom: 8px; width: 6px; cursor: ew-resize; }
+        .igfc-resizer-nw { top: 0; left: 0; width: 10px; height: 10px; cursor: nwse-resize; }
+        .igfc-resizer-ne { top: 0; right: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+        .igfc-resizer-sw { bottom: 0; left: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+        .igfc-resizer-se { bottom: 0; right: 0; width: 10px; height: 10px; cursor: nwse-resize; }
 
-        /* TAM RESPONSIVE ÜST BAŞLIK — DARALTILDIĞINDA HİÇBİR BUTON KAYBOLMAZ (Resim 2 Çözümü) */
         .igfc-header {
-          padding: 10px 18px;
-          background: var(--bg-header);
           display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px 12px;
-          border-bottom: 1px solid var(--border-color);
+          flex-direction: column;
+          gap: 8px;
+          padding: 10px 14px;
+          background: var(--bg-secondary);
+          border-bottom: 1px solid var(--border);
           cursor: move;
+          user-select: none;
         }
-        .igfc-title {
-          font-size: 15.5px;
-          font-weight: 800;
-          display: flex;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 8px;
-          color: var(--text-primary);
-          letter-spacing: -0.2px;
-        }
-        .igfc-badge {
-          font-size: 11px;
-          padding: 4px 10px;
-          border-radius: 999px;
-          background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-          color: #ffffff;
-          font-weight: 800;
-          box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
-          cursor: pointer;
-          border: 1px solid rgba(255, 255, 255, 0.25);
-          transition: transform 0.15s ease;
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          white-space: nowrap;
-        }
-        .igfc-badge:hover {
-          transform: scale(1.05);
-        }
-        .igfc-quota-pill {
-          font-size: 11px;
-          padding: 3px 8px;
-          border-radius: 999px;
-          background: rgba(16, 185, 129, 0.14);
-          border: 1px solid rgba(16, 185, 129, 0.35);
-          color: #10b981;
-          font-weight: 700;
-          white-space: nowrap;
-        }
-        .igfc-cache-info {
-          font-size: 11px;
-          color: var(--text-secondary);
-          font-weight: 500;
-          white-space: nowrap;
-        }
-        .igfc-header-right {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 6px;
-          align-items: center;
-          margin-left: auto;
-        }
-        .igfc-win-controls {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          padding-left: 6px;
-          border-left: 1px solid var(--border-color);
-          margin-left: auto;
-        }
-        .igfc-win-btn {
-          background: var(--btn-sec-bg);
-          border: 1px solid var(--border-color);
-          color: var(--btn-sec-text);
-          border-radius: 8px;
-          height: 30px;
-          padding: 0 9px;
-          cursor: pointer;
-          font-size: 12px;
-          font-weight: 700;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          transition: all 0.15s;
-          white-space: nowrap;
-        }
-        .igfc-win-btn:hover {
-          background: #3b82f6;
-          border-color: #3b82f6;
-          color: #fff;
-        }
-        .igfc-win-btn.close:hover {
-          background: #ef4444;
-          border-color: #ef4444;
-          color: #fff;
-        }
-
-        /* RESPONSIVE ÖZET İSTATİSTİK KARTLARI (Pencere Daraldığında Otomatik Alt Satıra Geçer, Kesilmez) */
-        .igfc-stats-row {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
-          gap: 8px;
-          padding: 10px 18px;
-          background: var(--bg-sub);
-          border-bottom: 1px solid var(--border-color);
-        }
-        .igfc-stat-box {
-          background: var(--bg-card);
-          border: 1px solid var(--border-color);
-          border-radius: 11px;
-          padding: 7px 11px;
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-          cursor: pointer;
-          transition: all 0.18s ease;
-        }
-        .igfc-stat-box:hover {
-          border-color: #3b82f6;
-          transform: translateY(-1px);
-        }
-        .igfc-stat-box.active-stat {
-          border-color: #3b82f6;
-          background: rgba(37, 99, 235, 0.15);
-          box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.4);
-        }
-        .igfc-stat-label {
-          font-size: 10px;
-          color: var(--text-secondary);
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: 0.3px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .igfc-stat-value {
-          font-size: 18px;
-          font-weight: 800;
-          color: var(--text-primary);
-        }
-
-        /* Üst Kontroller */
-        .igfc-controls {
-          padding: 9px 18px;
-          background: var(--bg-header);
-          border-bottom: 1px solid var(--border-color);
-          display: flex;
-          flex-wrap: wrap;
-          gap: 7px;
-          align-items: center;
-        }
-        .igfc-input, .igfc-select {
-          background: var(--bg-input);
-          border: 1px solid var(--border-color);
-          color: var(--text-primary);
-          padding: 6px 10px;
-          border-radius: 9px;
-          font-size: 12px;
-          font-weight: 500;
-          outline: none;
-        }
-        .igfc-input:focus, .igfc-select:focus {
-          border-color: #3b82f6;
-          box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-        }
-        .igfc-btn {
-          background: linear-gradient(135deg, #3b82f6, #2563eb);
-          color: #ffffff;
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          padding: 6px 12px;
-          border-radius: 9px;
-          font-size: 12px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.15s;
-          white-space: nowrap;
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
-        }
-        .igfc-btn:hover:not(:disabled) {
-          filter: brightness(1.08);
-          transform: translateY(-0.5px);
-        }
-        .igfc-btn:disabled {
-          opacity: 0.45;
-          cursor: not-allowed;
-          box-shadow: none;
-        }
-        .igfc-btn-success {
-          background: linear-gradient(135deg, #10b981, #059669);
-          box-shadow: 0 2px 6px rgba(16, 185, 129, 0.22);
-        }
-        .igfc-btn-danger {
-          background: linear-gradient(135deg, #ef4444, #dc2626);
-          box-shadow: 0 2px 6px rgba(239, 68, 68, 0.22);
-        }
-        .igfc-btn-secondary {
-          background: var(--btn-sec-bg);
-          border-color: var(--border-color);
-          color: var(--btn-sec-text);
-          box-shadow: none;
-        }
-        .igfc-btn-secondary:hover:not(:disabled) {
-          border-color: #3b82f6;
-        }
-
-        /* BÜYÜTÜLMÜŞ TAM GENİŞLİKTE İLERLEME ÇUBUĞU */
-        .igfc-status-bar {
-          padding: 9px 18px;
-          background: var(--bg-sub);
-          border-bottom: 1px solid var(--border-color);
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-        .igfc-status-top {
+        .igfc-header-top {
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 10px;
-        }
-        .igfc-status-text {
-          font-size: 12.5px;
-          font-weight: 600;
-          color: var(--text-primary);
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-        .igfc-progress-pct {
-          font-size: 13px;
-          font-weight: 800;
-          color: #3b82f6;
-          background: rgba(59, 130, 246, 0.12);
-          border: 1px solid rgba(59, 130, 246, 0.35);
-          padding: 2px 10px;
-          border-radius: 999px;
-          min-width: 54px;
-          text-align: center;
-        }
-        .igfc-progress-track {
           width: 100%;
-          height: 13px;
-          background: var(--bg-input);
-          border: 1px solid var(--border-color);
-          border-radius: 999px;
-          overflow: hidden;
-          padding: 2px;
         }
-        .igfc-progress-fill {
-          width: 0%;
-          height: 100%;
+        .igfc-title {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 8px;
+          font-weight: 700;
+          font-size: 14px;
+          min-width: 0;
+        }
+        .igfc-badge {
+          background: var(--accent);
+          color: #fff;
+          border: 1px solid rgba(255, 255, 255, 0.25);
+          padding: 3px 9px;
           border-radius: 999px;
-          background: linear-gradient(90deg, #3b82f6 0%, #06b6d4 50%, #10b981 100%);
-          transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+          font-size: 11px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .igfc-quota-pill {
+          background: var(--bg-tertiary);
+          color: var(--text-primary);
+          border: 1px solid var(--border);
+          padding: 3px 9px;
+          border-radius: 999px;
+          font-size: 11px;
+          font-weight: 600;
+        }
+        .igfc-quota-pill.warning { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border-color: rgba(245, 158, 11, 0.4); }
+        .igfc-quota-pill.danger { background: rgba(239, 68, 68, 0.25); color: #f87171; border-color: rgba(239, 68, 68, 0.45); }
+
+        .igfc-header-right {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 6px;
+          width: 100%;
+          padding-top: 6px;
+          border-top: 1px solid var(--border);
+        }
+        .igfc-win-controls {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          margin-left: auto;
+          flex-shrink: 0;
+        }
+        .igfc-win-btn {
+          background: var(--bg-tertiary);
+          color: var(--text-primary);
+          border: 1px solid rgba(148, 163, 184, 0.35);
+          border-radius: 8px;
+          min-width: 32px;
+          height: 30px;
+          padding: 0 9px;
+          font-size: 13px;
+          font-weight: 700;
+          line-height: 1;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+          transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+        }
+        .igfc-win-btn:hover {
+          background: var(--accent);
+          color: #ffffff;
+          border-color: var(--accent);
+        }
+        .igfc-win-btn.close {
+          background: rgba(239, 68, 68, 0.18);
+          color: #fca5a5;
+          border-color: rgba(239, 68, 68, 0.5);
+          font-size: 14px;
+        }
+        .igfc-win-btn.close:hover {
+          background: #ef4444;
+          color: #ffffff;
+          border-color: #ef4444;
         }
 
-        /* YENİ NESİL SEGMENTED TAB BAR VE BİRLEŞİK SEÇİM ARAÇ ÇUBUĞU (Resim 1 Çözümü) */
+        .igfc-body-wrap {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          min-height: 0;
+          overflow: hidden;
+        }
+
+        .igfc-stats-row {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(115px, 1fr));
+          gap: 8px;
+          padding: 10px 14px;
+          background: var(--bg-secondary);
+          border-bottom: 1px solid var(--border);
+        }
+        .igfc-stat-box {
+          background: var(--bg-primary);
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          padding: 7px 10px;
+          cursor: pointer;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          transition: border-color 0.15s ease;
+        }
+        .igfc-stat-box.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+        .igfc-stat-label { font-size: 11px; color: var(--text-secondary); }
+        .igfc-stat-value { font-size: 16px; font-weight: 700; }
+
+        .igfc-controls {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 7px;
+          padding: 9px 14px;
+          background: var(--bg-primary);
+          border-bottom: 1px solid var(--border);
+        }
+        .igfc-input, .igfc-select {
+          background: var(--bg-secondary);
+          color: var(--text-primary);
+          border: 1px solid rgba(148, 163, 184, 0.32);
+          border-radius: 8px;
+          height: 32px;
+          padding: 0 10px;
+          font-size: 12.5px;
+          box-sizing: border-box;
+        }
+        .igfc-input:focus, .igfc-select:focus {
+          outline: none;
+          border-color: var(--accent);
+          box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+        }
+        .igfc-btn {
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          border-radius: 8px;
+          height: 32px;
+          padding: 0 11px;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 5px;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+          transition: filter 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
+          box-sizing: border-box;
+        }
+        .igfc-btn:hover:not(:disabled) {
+          filter: brightness(1.12);
+          border-color: rgba(255, 255, 255, 0.35);
+        }
+        .igfc-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .igfc-btn-primary { background: var(--accent); color: #fff; }
+        .igfc-btn-secondary { background: var(--bg-tertiary); color: var(--text-primary); }
+        .igfc-btn-danger { background: var(--danger); color: #fff; }
+        .igfc-btn-warning { background: var(--warning); color: #111827; }
+        .igfc-btn-success { background: var(--success); color: #fff; }
+
+        .igfc-clear-cache-btn {
+          background: transparent;
+          border: none;
+          color: var(--danger);
+          cursor: pointer;
+          font-weight: 700;
+          padding: 0 4px;
+        }
+
+        .igfc-status-bar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          padding: 6px 14px;
+          background: var(--bg-secondary);
+          border-bottom: 1px solid var(--border);
+          font-size: 12px;
+        }
+        .igfc-status-text { flex: 1; color: var(--text-secondary); }
+        .igfc-progress-track {
+          width: 180px;
+          height: 6px;
+          background: var(--bg-tertiary);
+          border-radius: 999px;
+          overflow: hidden;
+        }
+        .igfc-progress-fill {
+          height: 100%;
+          width: 0%;
+          background: linear-gradient(90deg, var(--accent), #ec4899);
+          transition: width 0.2s ease;
+        }
+        .igfc-progress-pct { font-weight: 700; font-size: 11.5px; min-width: 36px; text-align: right; }
+
         .igfc-subbar {
           display: flex;
           flex-wrap: wrap;
-          justify-content: space-between;
           align-items: center;
-          gap: 8px 12px;
-          padding: 9px 18px;
-          background: var(--bg-header);
-          border-bottom: 1px solid var(--border-color);
+          justify-content: space-between;
+          gap: 8px;
+          padding: 8px 14px;
+          background: var(--bg-primary);
+          border-bottom: 1px solid var(--border);
         }
         .igfc-tabs {
           display: flex;
           flex-wrap: wrap;
-          gap: 5px;
-          flex: 1;
-          min-width: 280px;
-          background: var(--bg-sub);
-          padding: 4px;
-          border-radius: 12px;
-          border: 1px solid var(--border-color);
+          gap: 4px;
         }
         .igfc-tab {
-          background: transparent;
+          background: var(--bg-secondary);
           color: var(--text-secondary);
-          border: 1px solid transparent;
+          border: 1px solid var(--border);
+          border-radius: 999px;
           padding: 5px 10px;
-          border-radius: 8px;
           font-size: 11.5px;
-          font-weight: 700;
+          font-weight: 600;
           cursor: pointer;
-          white-space: nowrap;
           display: inline-flex;
           align-items: center;
-          gap: 6px;
-          transition: all 0.16s ease;
-        }
-        .igfc-tab:hover {
-          color: var(--text-primary);
-          background: var(--bg-card);
+          gap: 5px;
         }
         .igfc-tab.active {
-          background: linear-gradient(135deg, #2563eb, #3b82f6);
-          color: #ffffff;
-          box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+          background: var(--accent);
+          color: #fff;
+          border-color: var(--accent);
         }
-        .igfc-tab-count {
-          font-size: 10.5px;
+        .igfc-tab-badge {
+          background: rgba(0, 0, 0, 0.25);
           padding: 1px 6px;
           border-radius: 999px;
-          background: rgba(148, 163, 184, 0.18);
-          color: inherit;
-          font-weight: 800;
-        }
-        .igfc-tab.active .igfc-tab-count {
-          background: rgba(255, 255, 255, 0.24);
-          color: #ffffff;
+          font-size: 10.5px;
         }
 
-        /* Birleşik Kapsül Seçim Grubu (Tümünü Seç | Tersini Seç | Temizle) */
         .igfc-quick-select {
           display: inline-flex;
-          align-items: center;
-          background: var(--bg-sub);
-          border: 1px solid var(--border-color);
-          border-radius: 10px;
-          padding: 3px;
-          gap: 2px;
-          flex-shrink: 0;
-          margin-left: auto;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border);
+          border-radius: 999px;
+          overflow: hidden;
         }
         .igfc-seg-btn {
           background: transparent;
-          color: var(--text-secondary);
+          color: var(--text-primary);
           border: none;
           padding: 5px 10px;
-          border-radius: 7px;
           font-size: 11.5px;
-          font-weight: 700;
+          font-weight: 600;
           cursor: pointer;
-          white-space: nowrap;
-          transition: all 0.15s ease;
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
         }
-        .igfc-seg-btn:hover {
-          background: var(--bg-card);
-          color: #3b82f6;
-        }
-        .igfc-seg-divider {
-          width: 1px;
-          height: 16px;
-          background: var(--border-color);
-        }
+        .igfc-seg-btn:hover { background: var(--bg-tertiary); }
 
-        /* Kullanıcı Kart Listesi */
         .igfc-list-wrapper {
           flex: 1;
           position: relative;
-          overflow: hidden;
+          min-height: 0;
           display: flex;
           flex-direction: column;
         }
         .igfc-list {
           flex: 1;
           overflow-y: auto;
-          padding: 14px 18px 86px 18px;
+          padding: 12px 14px;
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
           gap: 10px;
           align-content: start;
         }
         .igfc-list.compact-mode {
-          grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
-          gap: 7px;
-        }
-        .igfc-list.compact-mode .igfc-card {
-          padding: 7px 13px;
-          border-radius: 10px;
-        }
-        .igfc-list.compact-mode .igfc-avatar {
-          width: 38px;
-          height: 38px;
-        }
-        .igfc-list.compact-mode .igfc-names {
-          flex-direction: row;
-          align-items: center;
-          gap: 10px;
-          flex-wrap: wrap;
+          grid-template-columns: 1fr;
+          gap: 6px;
         }
 
-        /* Kullanıcı Kartı */
-        .igfc-card {
-          background: var(--bg-card);
-          border: 1px solid var(--border-color);
-          border-radius: 13px;
-          padding: 11px 14px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
-          cursor: pointer;
-        }
-        .igfc-card:hover {
-          border-color: rgba(59, 130, 246, 0.65);
-          background: var(--bg-card-hover);
-          box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.25);
-        }
-        .igfc-card.selected {
-          border-color: #3b82f6;
-          background: rgba(37, 99, 235, 0.14);
-          box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.4);
-        }
-        .igfc-user-left {
-          display: flex;
-          align-items: center;
-          gap: 11px;
-          min-width: 0;
-          flex: 1;
-        }
-        .igfc-checkbox {
-          width: 16px;
-          height: 16px;
-          cursor: pointer;
-          accent-color: #3b82f6;
-          flex-shrink: 0;
-        }
-        .igfc-avatar {
-          width: 46px;
-          height: 46px;
-          border-radius: 50%;
-          object-fit: cover;
-          background: #0f172a;
-          border: 2px solid var(--border-color);
-          flex-shrink: 0;
-          display: block;
-          cursor: zoom-in;
-          transition: transform 0.18s ease, border-color 0.18s ease;
-        }
-        .igfc-avatar:hover {
-          border-color: #3b82f6;
-          transform: scale(1.07);
-        }
-        .igfc-names {
-          min-width: 120px;
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-        }
-        .igfc-username-row {
-          display: flex;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 5px;
-        }
-        .igfc-username {
-          font-size: 13.5px;
-          font-weight: 700;
-          color: var(--text-primary);
-          text-decoration: none;
-          white-space: nowrap;
-          line-height: 1.3;
-        }
-        .igfc-username:hover {
-          color: #3b82f6;
-          text-decoration: underline;
-        }
-        .igfc-fullname {
-          font-size: 12px;
-          color: var(--text-secondary);
-          word-break: normal;
-          overflow-wrap: anywhere;
-          line-height: 1.3;
-        }
-        .igfc-note-badge {
-          font-size: 11px;
-          color: #eab308;
-          background: rgba(234, 179, 8, 0.14);
-          border: 1px solid rgba(234, 179, 8, 0.35);
-          padding: 2px 7px;
-          border-radius: 6px;
-          margin-top: 2px;
-          display: inline-block;
-          max-width: fit-content;
-          font-weight: 600;
-        }
-        .igfc-tag {
-          font-size: 10px;
-          padding: 1.5px 6px;
-          border-radius: 999px;
-          font-weight: 700;
-          white-space: nowrap;
-          display: inline-flex;
-          align-items: center;
-          gap: 3px;
-        }
-        .igfc-tag-verified {
-          background: rgba(59, 130, 246, 0.15);
-          color: #3b82f6;
-          border: 1px solid rgba(59, 130, 246, 0.35);
-        }
-        .igfc-tag-private {
-          background: rgba(245, 158, 11, 0.15);
-          color: #f59e0b;
-          border: 1px solid rgba(245, 158, 11, 0.35);
-        }
-        .igfc-tag-suspicious {
-          background: rgba(168, 85, 247, 0.15);
-          color: #a855f7;
-          border: 1px solid rgba(168, 85, 247, 0.35);
-        }
-        .igfc-card-actions {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          flex-shrink: 0;
-        }
-        .igfc-mini-btn {
-          background: var(--btn-sec-bg);
-          color: var(--btn-sec-text);
-          border: 1px solid var(--border-color);
-          padding: 5px 9px;
-          border-radius: 8px;
-          font-size: 11.5px;
-          font-weight: 600;
-          cursor: pointer;
-          white-space: nowrap;
-          transition: all 0.15s;
-        }
-        .igfc-mini-btn:hover:not(:disabled) {
-          border-color: #3b82f6;
-          color: #3b82f6;
-        }
-        .igfc-mini-btn.whitelisted {
-          background: rgba(234, 179, 8, 0.18);
-          border-color: rgba(234, 179, 8, 0.5);
-          color: #ca8a04;
-        }
-        .igfc-mini-btn.unfollow {
-          background: linear-gradient(135deg, #ef4444, #dc2626);
-          border-color: rgba(239, 68, 68, 0.85);
-          color: #fff;
-        }
-        .igfc-mini-btn.unfollow:hover:not(:disabled) {
-          filter: brightness(1.1);
-          color: #fff;
-        }
-        .igfc-mini-btn.follow {
-          background: linear-gradient(135deg, #3b82f6, #2563eb);
-          border-color: #3b82f6;
-          color: #fff;
-        }
-        .igfc-empty {
-          grid-column: 1 / -1;
-          text-align: center;
-          padding: 64px 20px;
-          color: var(--text-secondary);
-          font-size: 14px;
-        }
-
-        /* Alt Pencereler */
-        .igfc-submodal-backdrop {
-          position: absolute;
-          inset: 0;
-          z-index: 80;
-          background: rgba(4, 7, 15, 0.78);
-          backdrop-filter: blur(8px);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 24px;
-        }
-        .igfc-submodal-box {
-          width: min(760px, 94%);
-          max-height: 84vh;
-          background: var(--bg-main);
-          color: var(--text-primary);
-          border: 1px solid rgba(59, 130, 246, 0.45);
-          border-radius: 16px;
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-          box-shadow: 0 25px 60px rgba(0, 0, 0, 0.65);
-        }
-        .igfc-submodal-header {
-          padding: 14px 20px;
-          background: var(--bg-header);
-          border-bottom: 1px solid var(--border-color);
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-        .igfc-submodal-body {
-          padding: 18px 20px;
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-        }
-        .igfc-cl-card {
-          background: var(--bg-card);
-          border: 1px solid var(--border-color);
+        .igfc-user-card {
+          background: var(--bg-secondary);
+          border: 1px solid var(--border);
           border-radius: 12px;
-          padding: 12px 16px;
-        }
-        .igfc-cl-latest {
-          border-color: #3b82f6;
-          background: rgba(37, 99, 235, 0.1);
-        }
-        .igfc-cl-head {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: 8px;
-        }
-        .igfc-cl-ver {
-          font-size: 14.5px;
-          font-weight: 800;
-          color: var(--text-primary);
-        }
-        .igfc-cl-badge {
-          font-size: 10.5px;
-          padding: 2px 8px;
-          border-radius: 999px;
-          background: rgba(59, 130, 246, 0.2);
-          color: #3b82f6;
-          font-weight: 700;
-        }
-        .igfc-cl-date {
-          font-size: 11.5px;
-          color: var(--text-secondary);
-        }
-        .igfc-cl-list {
-          margin: 0;
-          padding-left: 18px;
-          color: var(--text-secondary);
-          font-size: 12.5px;
-          line-height: 1.55;
-        }
-        .igfc-cl-list li {
-          margin-bottom: 4px;
-        }
-
-        /* Yüzen Toplu İşlem Çubuğu */
-        .igfc-floating-bar {
-          position: absolute;
-          bottom: 18px;
-          left: 50%;
-          transform: translate(-50%, 130%);
-          opacity: 0;
-          pointer-events: none;
-          background: var(--bg-header);
-          backdrop-filter: blur(12px);
-          border: 1px solid #3b82f6;
-          border-radius: 999px;
-          padding: 8px 18px;
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          box-shadow: 0 15px 35px rgba(0, 0, 0, 0.55), 0 0 20px rgba(37, 99, 235, 0.25);
-          transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
-          z-index: 20;
-        }
-        .igfc-floating-bar.visible {
-          transform: translate(-50%, 0);
-          opacity: 1;
-          pointer-events: auto;
-        }
-        .igfc-floating-count {
-          font-size: 13px;
-          font-weight: 700;
-          color: #3b82f6;
-          padding-right: 8px;
-          border-right: 1px solid var(--border-color);
-        }
-
-        /* Açılır / Kapanır Günlük Çekmecesi */
-        .igfc-footer-drawer {
-          background: var(--bg-sub);
-          border-top: 1px solid var(--border-color);
-          display: flex;
-          flex-direction: column;
-        }
-        .igfc-footer-header {
-          padding: 6px 18px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          cursor: pointer;
-          font-size: 11.5px;
-          color: var(--text-secondary);
-        }
-        .igfc-footer-header:hover {
-          color: var(--text-primary);
-        }
-        .igfc-footer-body {
-          max-height: 0;
-          overflow-y: auto;
-          padding: 0 18px;
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-          font-size: 11.5px;
-          transition: max-height 0.25s ease, padding 0.25s ease;
-        }
-        .igfc-footer-drawer.open .igfc-footer-body {
-          max-height: 120px;
-          padding: 8px 18px;
-          border-top: 1px solid var(--border-color);
-        }
-        .igfc-log-item { padding: 2px 0; color: var(--text-secondary); }
-        .igfc-log-info { color: #3b82f6; }
-        .igfc-log-success { color: #10b981; }
-        .igfc-log-warn { color: #f59e0b; }
-        .igfc-log-error { color: #ef4444; }
-
-        /* Bildirim (Toast) */
-        .igfc-toast-container {
-          position: absolute;
-          top: 68px;
-          right: 24px;
+          padding: 10px;
           display: flex;
           flex-direction: column;
           gap: 8px;
-          z-index: 90;
-          pointer-events: none;
+          transition: border-color 0.12s ease;
+        }
+        .igfc-user-card.selected { border-color: var(--accent); background: rgba(99, 102, 241, 0.12); }
+        .igfc-card-top { display: flex; align-items: center; gap: 10px; }
+        .igfc-avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; flex-shrink: 0; cursor: pointer; }
+        .igfc-card-info { flex: 1; min-width: 0; }
+        .igfc-username {
+          color: var(--text-primary);
+          font-weight: 700;
+          text-decoration: none;
+          word-break: break-all;
+        }
+        .igfc-fullname { color: var(--text-secondary); font-size: 12px; word-break: break-word; }
+        .igfc-userid { color: var(--text-secondary); font-size: 10.5px; }
+        .igfc-tag-verified { color: #38bdf8; margin-left: 4px; font-weight: 700; }
+        .igfc-tag-private { color: #fbbf24; margin-left: 4px; }
+        .igfc-tag-last {
+          display: inline-block;
+          background: rgba(239, 68, 68, 0.2);
+          color: #f87171;
+          font-size: 10.5px;
+          font-weight: 700;
+          padding: 1px 6px;
+          border-radius: 6px;
+          margin-top: 2px;
+          margin-right: 4px;
+        }
+        .igfc-card-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+
+        .igfc-floating-bar {
+          display: none;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          padding: 9px 14px;
+          background: var(--bg-tertiary);
+          border-top: 1px solid var(--border);
+        }
+        .igfc-floating-bar.visible { display: flex; }
+        .igfc-floating-count { font-weight: 700; }
+
+        .igfc-footer-drawer {
+          background: var(--bg-secondary);
+          border-top: 1px solid var(--border);
+        }
+        .igfc-footer-header {
+          padding: 7px 14px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          font-size: 11.5px;
+          cursor: pointer;
+          color: var(--text-secondary);
+        }
+        .igfc-footer-body {
+          display: none;
+          max-height: 130px;
+          overflow-y: auto;
+          background: #020617;
+          color: #94a3b8;
+          font-family: monospace;
+          font-size: 11px;
+          padding: 8px 14px;
+          border-top: 1px solid var(--border);
+        }
+        .igfc-footer-body.open { display: block; }
+
+        .igfc-submodal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.65);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000001;
+        }
+        .igfc-submodal-card {
+          background: var(--bg-primary, #0f172a);
+          color: var(--text-primary, #f8fafc);
+          border: 1px solid var(--border, rgba(255,255,255,0.2));
+          border-radius: 14px;
+          width: 580px;
+          max-width: 94vw;
+          max-height: 88vh;
+          overflow-y: auto;
+          padding: 16px;
+        }
+        .igfc-submodal-card.wide { width: 760px; }
+        .igfc-submodal-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 12px;
+        }
+        .igfc-detail-top { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+        .igfc-detail-avatar { width: 68px; height: 68px; border-radius: 50%; object-fit: cover; }
+        .igfc-detail-stats {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+          gap: 8px;
+          margin: 12px 0;
+        }
+        .igfc-detail-stat {
+          background: var(--bg-secondary, #1e293b);
+          padding: 8px;
+          border-radius: 8px;
+          display: flex;
+          flex-direction: column;
+        }
+        .igfc-last-person-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+          gap: 12px;
+          margin-top: 10px;
+        }
+        .igfc-last-person-box {
+          background: var(--bg-secondary, #1e293b);
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          padding: 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .igfc-last-person-role { font-weight: 700; font-size: 12px; color: var(--text-secondary); }
+        .igfc-last-person-row { display: flex; align-items: center; gap: 10px; }
+        .igfc-tools-section { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+        .igfc-tools-btn-row, .igfc-tools-inline { display: flex; flex-wrap: wrap; gap: 8px; }
+        .igfc-textarea {
+          width: 100%;
+          background: var(--bg-secondary);
+          color: var(--text-primary);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          padding: 8px;
+          box-sizing: border-box;
+        }
+        .igfc-toast-container {
+          position: fixed;
+          top: 18px;
+          right: 18px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          z-index: 1000005;
         }
         .igfc-toast {
-          background: var(--bg-header);
-          border: 1px solid var(--border-color);
-          color: var(--text-primary);
-          padding: 9px 14px;
+          background: #1e293b;
+          color: #fff;
+          padding: 10px 14px;
           border-radius: 10px;
-          font-size: 12.5px;
-          font-weight: 600;
-          box-shadow: 0 10px 25px rgba(0,0,0,0.35);
-          transition: all 0.25s ease;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+          font-size: 13px;
+          border-left: 4px solid var(--accent);
         }
-        .igfc-toast-success { border-color: #10b981; color: #10b981; }
-        .igfc-toast-warn { border-color: #f59e0b; color: #f59e0b; }
-        .igfc-toast-error { border-color: #ef4444; color: #ef4444; }
+        .igfc-toast.success { border-left-color: #10b981; }
+        .igfc-toast.error { border-left-color: #ef4444; }
+        .igfc-toast.warning { border-left-color: #f59e0b; }
       </style>
 
-      <div class="igfc-modal" id="igfc-modal" data-theme="${escapeHtml(effectiveTheme)}">
+      <div id="igfc-toast-container" class="igfc-toast-container"></div>
+
+      <div id="igfc-modal" class="igfc-modal" data-theme="midnight">
         <!-- 8 Yönlü Kenar ve Köşe Boyutlandırma Tutamaçları -->
         <div class="igfc-resizer igfc-resizer-n" data-dir="n"></div>
         <div class="igfc-resizer igfc-resizer-s" data-dir="s"></div>
         <div class="igfc-resizer igfc-resizer-e" data-dir="e"></div>
         <div class="igfc-resizer igfc-resizer-w" data-dir="w"></div>
-        <div class="igfc-resizer igfc-resizer-ne" data-dir="ne"></div>
         <div class="igfc-resizer igfc-resizer-nw" data-dir="nw"></div>
-        <div class="igfc-resizer igfc-resizer-se" data-dir="se"></div>
+        <div class="igfc-resizer igfc-resizer-ne" data-dir="ne"></div>
         <div class="igfc-resizer igfc-resizer-sw" data-dir="sw"></div>
-
-        <div class="igfc-toast-container" id="igfc-toast-container"></div>
+        <div class="igfc-resizer igfc-resizer-se" data-dir="se"></div>
 
         <!-- Tam Responsive Üst Başlık ve Sabit Pencere Kontrolleri -->
-        <div class="igfc-header" id="igfc-header">
-          <div class="igfc-title">
-            <span>Instagram Follow Checker</span>
-            <span class="igfc-badge" id="igfc-changelog-btn" title="Sürüm Geçmişini ve Yenilikleri Gör">v10 Pro • Yenilikler</span>
-            <span class="igfc-quota-pill igfc-hide-on-min" id="igfc-quota-badge" title="Bugün yapılan toplam işlem sayısı">Bugün: ${getTodayQuota()} işlem</span>
-            <span class="igfc-cache-info igfc-hide-on-min" id="igfc-cache-info"></span>
+        <div id="igfc-header" class="igfc-header">
+          <div class="igfc-header-top">
+            <div class="igfc-title">
+              <span>📸 IG Follow Checker</span>
+              <button id="igfc-changelog-btn" class="igfc-badge" title="Sürüm Geçmişi ve Yenilikler">v10.2 Pro</button>
+              <span id="igfc-quota-badge" class="igfc-quota-pill igfc-hide-on-min">Günlük Kota: 0/150</span>
+              <span id="igfc-cache-info" class="igfc-cache-info igfc-hide-on-min" style="font-size:11.5px;color:var(--text-secondary);"></span>
+            </div>
+
+            <!-- Sağ Üste Sabitlenmiş Pencere Kontrolleri (Görseldeki Tasarım) -->
+            <div class="igfc-win-controls">
+              <button id="igfc-zoom-out-btn" class="igfc-win-btn igfc-hide-on-min" title="Yazıyı Küçült">A-</button>
+              <span id="igfc-zoom-label" class="igfc-hide-on-min" style="font-size:12px;font-weight:700;padding:0 2px;">%100</span>
+              <button id="igfc-zoom-in-btn" class="igfc-win-btn igfc-hide-on-min" title="Yazıyı Büyüt">A+</button>
+              <button id="igfc-minimize-btn" class="igfc-win-btn" title="Simge Durumuna Küçült">-</button>
+              <button id="igfc-maximize-btn" class="igfc-win-btn igfc-hide-on-min" title="Tam Ekran Yap / Normale Dön">□</button>
+              <button id="igfc-close-btn" class="igfc-win-btn close" title="Uygulamayı Kapat">✖</button>
+            </div>
           </div>
 
-          <div class="igfc-header-right">
-            <button class="igfc-btn igfc-btn-secondary igfc-hide-on-min" id="igfc-analytics-btn" title="Hesap Analizi, Otomatik Koruma ve Yedekleme">📊 Analiz & Araçlar</button>
+          <div class="igfc-header-right igfc-hide-on-min">
+            <button id="igfc-last-follow-modal-btn" class="igfc-btn igfc-btn-danger" title="Son takip edilen veya son takipçi kişiyi çıkart">🎯 Son Takip Çıkart</button>
+            <button id="igfc-analytics-btn" class="igfc-btn igfc-btn-secondary" title="Hesap Analizi & Temizlik Sihirbazı">🛠 Araçlar</button>
+            <button id="igfc-compare-modal-btn" class="igfc-btn igfc-btn-secondary" title="Geçmiş Taramaları Karşılaştır">🔀 Karşılaştır</button>
+            <button id="igfc-settings-btn" class="igfc-btn igfc-btn-secondary" title="Ayarlar & Önbellek">⚙ Ayarlar</button>
+            <button id="igfc-lang-btn" class="igfc-btn igfc-btn-secondary" title="Dil Değiştir (TR / EN)">🌐 TR</button>
 
-            <select id="igfc-theme-select" class="igfc-select igfc-hide-on-min" title="Uygulama Teması (Varsayılan: Tarayıcı Teması)">
-              <option value="system" ${state.theme === 'system' ? 'selected' : ''}>🖥️ Tarayıcı Teması (Oto)</option>
-              <option value="light" ${state.theme === 'light' ? 'selected' : ''}>☀️ Açık Tema (Light)</option>
-              <option value="midnight" ${state.theme === 'midnight' ? 'selected' : ''}>🌙 Gece Mavisi (Dark)</option>
-              <option value="oled" ${state.theme === 'oled' ? 'selected' : ''}>🌑 OLED Siyah</option>
-              <option value="cyber" ${state.theme === 'cyber' ? 'selected' : ''}>🔮 Siber Mor</option>
-              <option value="sunset" ${state.theme === 'sunset' ? 'selected' : ''}>🌅 IG Gradyan</option>
-            </select>
+            <div style="margin-left:auto;display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
+              <select id="igfc-theme-select" class="igfc-select" title="Tema Seçimi">
+                <option value="system">🌗 Otomatik (Sistem)</option>
+                <option value="midnight">🌙 Koyu (Midnight)</option>
+                <option value="light">☀️ Açık (Light)</option>
+                <option value="oled">🖤 Zifiri Koyu (OLED)</option>
+                <option value="cyber">⚡ Cyberpunk</option>
+                <option value="sunset">🌅 Gün Batımı</option>
+              </select>
 
-            <select id="igfc-speed-select" class="igfc-select igfc-hide-on-min" title="Toplu İşlem Hız & Anti-Ban Modu">
-              <option value="fast" ${state.speedMode === 'fast' ? 'selected' : ''}>⚡ Hızlı (2-4 sn)</option>
-              <option value="safe" ${state.speedMode === 'safe' ? 'selected' : ''}>🛡️ Güvenli (4-7 sn)</option>
-              <option value="ultra" ${state.speedMode === 'ultra' ? 'selected' : ''}>🔒 Çok Güvenli (7-12 sn)</option>
-            </select>
+              <select id="igfc-speed-select" class="igfc-select" title="İşlem Hızı / Anti-Ban Modu">
+                <option value="safe">🛡️ Güvenli Mod</option>
+                <option value="normal" selected>⚖️ Dengeli Mod</option>
+                <option value="fast">⚡ Hızlı Mod</option>
+                <option value="ultra">🐢 Ultra Güvenli</option>
+              </select>
 
-            <button class="igfc-btn igfc-btn-secondary igfc-hide-on-min" id="igfc-view-toggle-btn" title="Liste görünümünü değiştir">
-              ${state.viewMode === 'grid' ? 'Görünüm: Kart' : 'Görünüm: Kompakt'}
-            </button>
-
-            <!-- Pencere Boyutlandırma ve Ölçek Kontrolleri (Asla Kaybolmaz) -->
-            <div class="igfc-win-controls">
-              <button class="igfc-win-btn igfc-hide-on-min" id="igfc-zoom-out-btn" title="Yazı ve Kart Boyutunu Küçült">A-</button>
-              <button class="igfc-win-btn igfc-hide-on-min" id="igfc-zoom-in-btn" title="Yazı ve Kart Boyutunu Büyüt">A+</button>
-              <button class="igfc-win-btn" id="igfc-minimize-btn" title="Pencereyi Küçült / Geri Yükle">—</button>
-              <button class="igfc-win-btn igfc-hide-on-min" id="igfc-maximize-btn" title="Tam Ekran Yap / Normal Boyut">⛶</button>
-              <button class="igfc-win-btn close" id="igfc-close-btn" title="Uygulamayı Kapat">✕</button>
+              <button id="igfc-view-toggle-btn" class="igfc-btn igfc-btn-secondary" title="Kart / Kompakt Liste Görünümü">⊞ Görünüm</button>
             </div>
           </div>
         </div>
 
-        <!-- Gövde Alanı -->
-        <div class="igfc-body-wrap" id="igfc-body-wrap">
-          <!-- Tıklanabilir Responsive Özet İstatistik Kartları -->
+        <!-- Ana Gövde -->
+        <div id="igfc-body-wrap" class="igfc-body-wrap">
+          <!-- 7 Özet İstatistik Kartı -->
           <div class="igfc-stats-row">
-            <div class="igfc-stat-box active-stat" data-stat-tab="nonFollowers" title="Seni takip etmeyenleri göster">
+            <div class="igfc-stat-box active" data-stat-tab="nonFollowers" title="Seni takip etmeyenleri göster">
               <span class="igfc-stat-label">Takip Etmeyen</span>
-              <span class="igfc-stat-value" id="igfc-stat-nonfollowers" style="color:#ef4444;">0</span>
+              <span id="igfc-stat-nonfollowers" class="igfc-stat-value">0</span>
             </div>
-            <div class="igfc-stat-box" data-stat-tab="suspicious" title="Profil resmi olmayan / şüpheli / inaktif hesapları göster">
-              <span class="igfc-stat-label">👻 Şüpheli / Bot</span>
-              <span class="igfc-stat-value" id="igfc-stat-suspicious" style="color:#a855f7;">0</span>
+            <div class="igfc-stat-box" data-stat-tab="suspicious" title="Şüpheli / Bot hesapları göster">
+              <span class="igfc-stat-label">Şüpheli / Bot</span>
+              <span id="igfc-stat-suspicious" class="igfc-stat-value">0</span>
             </div>
             <div class="igfc-stat-box" data-stat-tab="fans" title="Senin takip etmediklerini göster">
               <span class="igfc-stat-label">Takip Etmediğin</span>
-              <span class="igfc-stat-value" id="igfc-stat-fans" style="color:#3b82f6;">0</span>
+              <span id="igfc-stat-fans" class="igfc-stat-value">0</span>
             </div>
             <div class="igfc-stat-box" data-stat-tab="mutuals" title="Karşılıklı takipleştiklerini göster">
               <span class="igfc-stat-label">Karşılıklı</span>
-              <span class="igfc-stat-value" id="igfc-stat-mutuals" style="color:#10b981;">0</span>
+              <span id="igfc-stat-mutuals" class="igfc-stat-value">0</span>
             </div>
-            <div class="igfc-stat-box" data-stat-tab="lostFollowers" title="Son taramadan beri takipten çıkanları göster">
+            <div class="igfc-stat-box" data-stat-tab="lostFollowers" title="Son taramadan beri takipten çıkanlar">
               <span class="igfc-stat-label">Yeni Çıkanlar</span>
-              <span class="igfc-stat-value" id="igfc-stat-lost" style="color:#f59e0b;">0</span>
+              <span id="igfc-stat-lost" class="igfc-stat-value">0</span>
             </div>
             <div class="igfc-stat-box" data-stat-tab="allFollowers" title="Tüm takipçilerini göster">
               <span class="igfc-stat-label">Tüm Takipçiler</span>
-              <span class="igfc-stat-value" id="igfc-stat-followers">0</span>
+              <span id="igfc-stat-followers" class="igfc-stat-value">0</span>
             </div>
             <div class="igfc-stat-box" data-stat-tab="allFollowing" title="Tüm takip ettiklerini göster">
               <span class="igfc-stat-label">Tüm Takip Edilen</span>
-              <span class="igfc-stat-value" id="igfc-stat-following">0</span>
+              <span id="igfc-stat-following" class="igfc-stat-value">0</span>
             </div>
           </div>
 
-          <!-- Arama, Tarama ve Dışa Aktarma Kontrolleri -->
+          <!-- Tarama, Arama, Filtre, Sıralama ve Dışa Aktarma Kontrolleri -->
           <div class="igfc-controls">
-            <input type="text" id="igfc-username-input" class="igfc-input" placeholder="Kullanıcı adı (boşsa kendi hesabın)" value="${escapeHtml(
-              getDefaultUsername()
-            )}" style="width:175px;" />
-            <button class="igfc-btn igfc-btn-success" id="igfc-my-account-btn">⚡ Kendi Hesabımı Tara</button>
-            <button class="igfc-btn" id="igfc-start-btn">🔍 Kullanıcıyı Tara</button>
-            <button class="igfc-btn igfc-btn-danger" id="igfc-stop-btn" disabled>■ Durdur</button>
+            <input id="igfc-username-input" type="text" class="igfc-input" style="width:140px;" placeholder="@kullanici..." value="${escapeHtml(state.username || getDefaultUsername())}" />
+            <button id="igfc-my-account-btn" class="igfc-btn igfc-btn-success">⚡ Kendi Hesabımı Tara</button>
+            <button id="igfc-start-btn" class="igfc-btn igfc-btn-primary">🔍 Kullanıcıyı Tara</button>
+            <button id="igfc-unfollow-last-btn" class="igfc-btn igfc-btn-danger" title="En son takip edilen kişiyi hemen çıkart">🎯 Son Takip Kişisini Çıkart</button>
+            <button id="igfc-stop-btn" class="igfc-btn igfc-btn-warning" disabled>⏹ Durdur</button>
 
-            <input type="text" id="igfc-search-input" class="igfc-input" placeholder="🔍 İsim, @kullanıcı veya not ara..." style="margin-left:auto; min-width:190px; flex:1; max-width:260px;" />
+            <input id="igfc-search-input" type="text" class="igfc-input" style="flex:1;min-width:140px;" placeholder="Ara: @isim, not veya hariç tut (!kelime)..." />
 
-            <select id="igfc-filter-select" class="igfc-select" title="Hesap Türüne Göre Filtrele">
+            <select id="igfc-filter-select" class="igfc-select">
               <option value="all">Filtre: Tümü</option>
-              <option value="verified">✓ Onaylı Hesaplar</option>
+              <option value="verified">✔ Onaylı Hesaplar</option>
+              <option value="unverified">✖ Onaysız Hesaplar</option>
               <option value="private">🔒 Gizli Hesaplar</option>
               <option value="public">🌐 Açık Hesaplar</option>
               <option value="suspicious">👻 Şüpheli / Resimsiz</option>
-              <option value="noted">📝 Not Eklenenler</option>
+              <option value="whitelist">★ Korunanlar</option>
+              <option value="hasNote">📝 Not Eklenenler</option>
+              <option value="tag:Arkadaş">🟢 Etiket: Arkadaş</option>
+              <option value="tag:İş">🔵 Etiket: İş</option>
+              <option value="tag:Aile">🟣 Etiket: Aile</option>
+              <option value="tag:VIP">⭐ Etiket: VIP</option>
             </select>
 
-            <select id="igfc-sort-select" class="igfc-select" title="Sıralama Ölçütü">
-              <option value="default">Sırala: Varsayılan</option>
+            <select id="igfc-sort-select" class="igfc-select">
+              <option value="default">Sırala: En Son Takip Sırası (Varsayılan)</option>
+              <option value="oldest">Sırala: En Eski Takip Sırası (Ters)</option>
               <option value="az">Kullanıcı Adı (A → Z)</option>
               <option value="za">Kullanıcı Adı (Z → A)</option>
               <option value="name">Tam İsim (A → Z)</option>
               <option value="suspicious">Şüphe Puanı (Yüksek → Düşük)</option>
             </select>
 
-            <button class="igfc-btn igfc-btn-secondary" id="igfc-copy-btn" title="Aktif listedeki kullanıcıları kopyala">📋 Kopyala</button>
-            <button class="igfc-btn igfc-btn-secondary" id="igfc-csv-btn" title="Excel uyumlu CSV olarak indir">📊 CSV</button>
-            <button class="igfc-btn igfc-btn-secondary" id="igfc-export-btn" title="Detaylı JSON olarak indir">📦 JSON</button>
+            <button id="igfc-copy-btn" class="igfc-btn igfc-btn-secondary" title="Aktif listedeki kullanıcıları kopyala">📋 Kopyala</button>
+            <button id="igfc-csv-btn" class="igfc-btn igfc-btn-secondary" title="Excel uyumlu CSV olarak indir">📊 CSV</button>
+            <button id="igfc-export-btn" class="igfc-btn igfc-btn-secondary" title="Detaylı JSON olarak indir">📦 JSON</button>
+            <button id="igfc-report-btn" class="igfc-btn igfc-btn-secondary" title="Detaylı Hesap Sağlık ve Analiz Raporunu (.txt) indir">📄 Rapor</button>
+            <button id="igfc-import-json-btn" class="igfc-btn igfc-btn-secondary" title="Resmi Instagram followers_1.json / following.json veya yedek JSON yükle">📂 JSON Yükle</button>
+            <input id="igfc-import-json-input" type="file" multiple accept=".json" style="display:none;" />
           </div>
 
-          <!-- BÜYÜTÜLMÜŞ TAM GENİŞLİKTE İLERLEME ÇUBUĞU -->
+          <!-- Durum ve İlerleme Çubuğu -->
           <div class="igfc-status-bar">
-            <div class="igfc-status-top">
-              <div class="igfc-status-text" id="igfc-status-msg">Hazır. "Kendi Hesabımı Tara" butonuna tıklayarak başlayabilirsiniz.</div>
-              <span class="igfc-progress-pct" id="igfc-progress-pct">%0</span>
-            </div>
+            <span id="igfc-status-msg" class="igfc-status-text">Hazır. "⚡ Kendi Hesabımı Tara" butonuna tıklayarak hemen başlayabilirsiniz.</span>
             <div class="igfc-progress-track">
-              <div class="igfc-progress-fill" id="igfc-progress-fill"></div>
+              <div id="igfc-progress-fill" class="igfc-progress-fill"></div>
             </div>
+            <span id="igfc-progress-pct" class="igfc-progress-pct">0%</span>
           </div>
 
-          <!-- YENİ NESİL SEGMENTED TAB BAR VE BİRLEŞİK SEÇİM ARAÇ ÇUBUĞU (Resim 1 Çözümü) -->
+          <!-- Modern Segmented Sekmeler & Hızlı Seçim Kapsülü -->
           <div class="igfc-subbar">
             <div class="igfc-tabs">
-              <button class="igfc-tab active" data-tab="nonFollowers" id="igfc-tab-nonFollowers">
-                <span>🚫 Takip Etmeyenler</span>
-                <span class="igfc-tab-count" id="igfc-cnt-nonFollowers">0</span>
-              </button>
-              <button class="igfc-tab" data-tab="suspicious" id="igfc-tab-suspicious">
-                <span>👻 Şüpheli / Bot</span>
-                <span class="igfc-tab-count" id="igfc-cnt-suspicious">0</span>
-              </button>
-              <button class="igfc-tab" data-tab="fans" id="igfc-tab-fans">
-                <span>💙 Takip Etmediklerin</span>
-                <span class="igfc-tab-count" id="igfc-cnt-fans">0</span>
-              </button>
-              <button class="igfc-tab" data-tab="mutuals" id="igfc-tab-mutuals">
-                <span>🤝 Karşılıklı</span>
-                <span class="igfc-tab-count" id="igfc-cnt-mutuals">0</span>
-              </button>
-              <button class="igfc-tab" data-tab="lostFollowers" id="igfc-tab-lostFollowers">
-                <span>📉 Yeni Çıkanlar</span>
-                <span class="igfc-tab-count" id="igfc-cnt-lostFollowers">0</span>
-              </button>
-              <button class="igfc-tab" data-tab="newFollowers" id="igfc-tab-newFollowers">
-                <span>📈 Yeni Gelenler</span>
-                <span class="igfc-tab-count" id="igfc-cnt-newFollowers">0</span>
-              </button>
-              <button class="igfc-tab" data-tab="whitelist" id="igfc-tab-whitelist">
-                <span>★ Korunanlar</span>
-                <span class="igfc-tab-count" id="igfc-cnt-whitelist">${state.whitelist.size}</span>
-              </button>
-              <button class="igfc-tab" data-tab="history" id="igfc-tab-history">
-                <span>🕒 Geçmiş</span>
-                <span class="igfc-tab-count" id="igfc-cnt-history">${state.unfollowHistory.length}</span>
-              </button>
+              <button id="igfc-tab-nonFollowers" class="igfc-tab active" data-tab="nonFollowers">🚫 Takip Etmeyenler <span class="igfc-tab-badge" id="igfc-cnt-nonFollowers">0</span></button>
+              <button id="igfc-tab-suspicious" class="igfc-tab" data-tab="suspicious">👻 Şüpheli / Bot <span class="igfc-tab-badge" id="igfc-cnt-suspicious">0</span></button>
+              <button id="igfc-tab-fans" class="igfc-tab" data-tab="fans">💙 Takip Etmediklerin <span class="igfc-tab-badge" id="igfc-cnt-fans">0</span></button>
+              <button id="igfc-tab-mutuals" class="igfc-tab" data-tab="mutuals">🤝 Karşılıklı <span class="igfc-tab-badge" id="igfc-cnt-mutuals">0</span></button>
+              <button id="igfc-tab-lostFollowers" class="igfc-tab" data-tab="lostFollowers">📉 Yeni Çıkanlar <span class="igfc-tab-badge" id="igfc-cnt-lostFollowers">0</span></button>
+              <button id="igfc-tab-newFollowers" class="igfc-tab" data-tab="newFollowers">📈 Yeni Gelenler <span class="igfc-tab-badge" id="igfc-cnt-newFollowers">0</span></button>
+              <button id="igfc-tab-favorites" class="igfc-tab" data-tab="favorites">💛 Favoriler <span class="igfc-tab-badge" id="igfc-cnt-favorites">0</span></button>
+              <button id="igfc-tab-whitelist" class="igfc-tab" data-tab="whitelist">★ Korunanlar <span class="igfc-tab-badge" id="igfc-cnt-whitelist">0</span></button>
+              <button id="igfc-tab-history" class="igfc-tab" data-tab="history">🕒 Geçmiş <span class="igfc-tab-badge" id="igfc-cnt-history">0</span></button>
             </div>
 
             <div class="igfc-quick-select">
-              <button class="igfc-seg-btn" id="igfc-select-all-btn" title="Listedeki tüm kullanıcıları seç">☑ Tümünü Seç</button>
-              <div class="igfc-seg-divider"></div>
-              <button class="igfc-seg-btn" id="igfc-invert-select-btn" title="Seçili olanları bırak, seçili olmayanları seç">⇄ Tersini Seç</button>
-              <div class="igfc-seg-divider"></div>
-              <button class="igfc-seg-btn" id="igfc-deselect-all-btn" title="Tüm seçimleri kaldır">✕ Temizle</button>
+              <button id="igfc-select-all-btn" class="igfc-seg-btn">☑ Tümünü Seç</button>
+              <button id="igfc-invert-select-btn" class="igfc-seg-btn">🔀 Tersini Seç</button>
+              <button id="igfc-deselect-all-btn" class="igfc-seg-btn">☐ Temizle</button>
             </div>
           </div>
 
-          <!-- Kullanıcı Kart Listesi + Yüzen Toplu İşlem Barı -->
+          <!-- Kullanıcı Listesi ve Yüzen Eylem Barı -->
           <div class="igfc-list-wrapper">
-            <div class="igfc-list ${state.viewMode === 'compact' ? 'compact-mode' : ''}" id="igfc-list-container">
-              <div class="igfc-empty">Henüz tarama yapılmadı. Başlamak için üstteki "Kendi Hesabımı Tara" butonuna tıklayın.</div>
-            </div>
+            <div id="igfc-list-container" class="igfc-list"></div>
 
-            <div class="igfc-floating-bar" id="igfc-floating-bar">
-              <span class="igfc-floating-count" id="igfc-floating-count">0 kişi seçildi</span>
-              <button class="igfc-btn igfc-btn-secondary" id="igfc-bulk-whitelist-btn">★ Seçilenleri Koru</button>
-              <button class="igfc-btn" id="igfc-bulk-follow-btn">➕ Seçilenleri Takip Et</button>
-              <button class="igfc-btn igfc-btn-danger" id="igfc-bulk-unfollow-btn">Seçilenleri Takipten Çık</button>
-              <button class="igfc-btn igfc-btn-secondary" id="igfc-floating-cancel-btn">İptal</button>
+            <div id="igfc-floating-bar" class="igfc-floating-bar">
+              <span id="igfc-floating-count" class="igfc-floating-count">0 kişi seçildi</span>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button id="igfc-bulk-whitelist-btn" class="igfc-btn igfc-btn-secondary">★ Seçilenleri Koru</button>
+                <button id="igfc-bulk-follow-btn" class="igfc-btn igfc-btn-success">➕ Seçilenleri Takip Et</button>
+                <button id="igfc-bulk-unfollow-btn" class="igfc-btn igfc-btn-danger">🚫 Seçilenleri Takipten Çık</button>
+                <button id="igfc-bulk-remove-follower-btn" class="igfc-btn igfc-btn-warning">❌ Takipçilerden Çıkar</button>
+                <button id="igfc-floating-cancel-btn" class="igfc-btn igfc-btn-secondary">İptal</button>
+              </div>
             </div>
           </div>
+        </div>
 
-          <!-- Açılır / Kapanır Günlük (Log) Çekmecesi -->
-          <div class="igfc-footer-drawer" id="igfc-footer-drawer">
-            <div class="igfc-footer-header" id="igfc-footer-toggle">
-              <span id="igfc-last-log-preview">[Sistem] Instagram Follow Checker v10 Pro hazır. (Tarayıcı teması otomatik algılandı)</span>
-              <span id="igfc-footer-arrow">▲ Günlüğü Göster</span>
-            </div>
-            <div class="igfc-footer-body" id="igfc-log-list">
-              <div class="igfc-log-item igfc-log-info">[Sistem] Instagram Follow Checker v10 Pro hazır.</div>
-            </div>
+        <!-- Alt Günlük Çekmecesi (Footer Drawer) -->
+        <div id="igfc-footer-drawer" class="igfc-footer-drawer">
+          <div id="igfc-footer-toggle" class="igfc-footer-header">
+            <span id="igfc-last-log-preview">📜 İşlem günlüğü hazır.</span>
+            <span id="igfc-footer-arrow">▲ Günlüğü Göster</span>
           </div>
+          <div id="igfc-log-list" class="igfc-footer-body"></div>
         </div>
       </div>
     `;
@@ -2524,259 +3105,165 @@
 
     const modalEl = document.getElementById('igfc-modal');
     const headerEl = document.getElementById('igfc-header');
-    const minBtn = document.getElementById('igfc-minimize-btn');
-
-    if (state.uiScale !== 100) {
-      modalEl.style.zoom = `${state.uiScale}%`;
-    }
-
-    // Tarayıcı teması değiştiğinde ('system' seçiliyse) canlı güncelle
-    if (window.matchMedia) {
-      window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
-        if (state.theme === 'system') {
-          modalEl.setAttribute('data-theme', resolveEffectiveTheme('system'));
-        }
-      });
-    }
-
-    // 8 Yönlü Kenar/Köşe Boyutlandırma ve Başlıktan Sürükleme Başlat
     initWindowDragAndResize(modalEl, headerEl);
+
+    // Ayarları Yansıt
+    const themeSel = document.getElementById('igfc-theme-select');
+    if (themeSel) themeSel.value = state.theme;
+    const speedSel = document.getElementById('igfc-speed-select');
+    if (speedSel) speedSel.value = state.speedMode;
+    document.getElementById('igfc-list-container')?.classList.toggle('compact-mode', state.viewMode === 'compact');
+    applyTheme();
+    applyZoom();
+    updateQuotaBadgeUI();
+    updateCacheInfoUI();
 
     // Klavye Kısayolları
     window.addEventListener('keydown', (e) => {
-      if (!document.getElementById(EXISTING_ID)) return;
       if (e.key === 'Escape') {
-        const sub = document.getElementById('igfc-submodal');
-        if (sub) sub.remove();
-      } else if (e.key === '/' && !e.target.closest('input, textarea')) {
+        closeAllSubModals();
+      } else if (e.key === '/' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
         e.preventDefault();
         document.getElementById('igfc-search-input')?.focus();
       }
     });
 
-    // Sürüm Geçmişi ve Analiz Pencereleri
-    document.getElementById('igfc-changelog-btn').addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (state.isMinimized) toggleMinimize();
-      openChangelogModal();
-    });
+    // Üst Bar ve Modal Butonları
+    document.getElementById('igfc-last-follow-modal-btn')?.addEventListener('click', openLastFollowModal);
+    document.getElementById('igfc-unfollow-last-btn')?.addEventListener('click', openLastFollowModal);
+    document.getElementById('igfc-changelog-btn')?.addEventListener('click', openChangelogModal);
+    document.getElementById('igfc-analytics-btn')?.addEventListener('click', openAnalyticsModal);
+    document.getElementById('igfc-compare-modal-btn')?.addEventListener('click', openCompareModal);
+    document.getElementById('igfc-settings-btn')?.addEventListener('click', openSettingsModal);
 
-    document.getElementById('igfc-analytics-btn').addEventListener('click', () => {
-      openAnalyticsModal();
-    });
-
-    // Tema Değiştirici
-    document.getElementById('igfc-theme-select').addEventListener('change', (e) => {
+    document.getElementById('igfc-theme-select')?.addEventListener('change', (e) => {
       state.theme = e.target.value;
-      modalEl.setAttribute('data-theme', resolveEffectiveTheme(state.theme));
+      applyTheme();
       saveSettings();
-      showToast('Tema güncellendi 🎨', 'info');
     });
 
-    // Pencere Kapatma
-    document.getElementById('igfc-close-btn').addEventListener('click', (e) => {
-      e.stopPropagation();
-      state.bulkAbort = true;
-      if (state.isRunning && state.abortController) {
-        state.abortController.abort();
-      }
+    document.getElementById('igfc-speed-select')?.addEventListener('change', (e) => {
+      state.speedMode = e.target.value;
+      saveSettings();
+    });
+
+    document.getElementById('igfc-view-toggle-btn')?.addEventListener('click', () => {
+      state.viewMode = state.viewMode === 'grid' ? 'compact' : 'grid';
+      document.getElementById('igfc-list-container')?.classList.toggle('compact-mode', state.viewMode === 'compact');
+      saveSettings();
+    });
+
+    document.getElementById('igfc-zoom-out-btn')?.addEventListener('click', () => {
+      state.uiScale = Math.max(80, state.uiScale - 5);
+      applyZoom();
+      saveSettings();
+    });
+
+    document.getElementById('igfc-zoom-in-btn')?.addEventListener('click', () => {
+      state.uiScale = Math.min(120, state.uiScale + 5);
+      applyZoom();
+      saveSettings();
+    });
+
+    document.getElementById('igfc-minimize-btn')?.addEventListener('click', toggleMinimize);
+    headerEl?.addEventListener('dblclick', (e) => {
+      if (!e.target.closest('button, select, input')) toggleMinimize();
+    });
+    document.getElementById('igfc-maximize-btn')?.addEventListener('click', toggleMaximize);
+    document.getElementById('igfc-close-btn')?.addEventListener('click', () => {
+      stopScan();
       root.remove();
     });
 
-    // Küçültme / Geri Büyütme
-    const toggleMinimize = () => {
-      state.isMinimized = !state.isMinimized;
-      if (state.isMinimized) {
-        if (state.isMaximized) {
-          state.isMaximized = false;
-          modalEl.classList.remove('maximized');
-          document.getElementById('igfc-maximize-btn').textContent = '⛶';
-        }
-        state.savedBounds = {
-          position: modalEl.style.position,
-          left: modalEl.style.left,
-          top: modalEl.style.top,
-          width: modalEl.style.width,
-          height: modalEl.style.height,
-        };
-        modalEl.style.position = '';
-        modalEl.style.left = '';
-        modalEl.style.top = '';
-        modalEl.style.width = '';
-        modalEl.style.height = '';
-        modalEl.classList.add('minimized');
-        root.classList.add('minimized-root');
-        minBtn.textContent = '▢ Büyüt';
-        minBtn.title = 'Pencereyi Eski Boyutuna Büyüt';
-      } else {
-        modalEl.classList.remove('minimized');
-        root.classList.remove('minimized-root');
-        if (state.savedBounds && state.savedBounds.position === 'fixed') {
-          modalEl.style.position = state.savedBounds.position;
-          modalEl.style.left = state.savedBounds.left;
-          modalEl.style.top = state.savedBounds.top;
-          modalEl.style.width = state.savedBounds.width;
-          modalEl.style.height = state.savedBounds.height;
-        }
-        minBtn.textContent = '—';
-        minBtn.title = 'Pencereyi Küçült';
-      }
-    };
+    document.getElementById('igfc-footer-toggle')?.addEventListener('click', toggleFooterDrawer);
 
-    minBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleMinimize();
-    });
+    // Tarama Kontrolleri
+    document.getElementById('igfc-start-btn')?.addEventListener('click', () => startScan(false));
+    document.getElementById('igfc-my-account-btn')?.addEventListener('click', () => startScan(true));
+    document.getElementById('igfc-stop-btn')?.addEventListener('click', stopScan);
 
-    headerEl.addEventListener('click', (e) => {
-      if (state.isMinimized && !e.target.closest('button')) {
-        toggleMinimize();
-      }
-    });
-
-    // Tam Ekran
-    document.getElementById('igfc-maximize-btn').addEventListener('click', (e) => {
-      e.stopPropagation();
-      state.isMaximized = !state.isMaximized;
-      modalEl.classList.toggle('maximized', state.isMaximized);
-      e.currentTarget.textContent = state.isMaximized ? '❐' : '⛶';
-    });
-
-    // UI Ölçeklendirme
-    const applyZoom = () => {
-      modalEl.style.zoom = `${state.uiScale}%`;
-      saveSettings();
-      showToast(`Görünüm ölçeği: %${state.uiScale}`, 'info');
-    };
-    document.getElementById('igfc-zoom-out-btn').addEventListener('click', () => {
-      state.uiScale = Math.max(80, state.uiScale - 5);
-      applyZoom();
-    });
-    document.getElementById('igfc-zoom-in-btn').addEventListener('click', () => {
-      state.uiScale = Math.min(120, state.uiScale + 5);
-      applyZoom();
-    });
-
-    // Kart / Kompakt Liste Görünümü Değiştirme
-    document.getElementById('igfc-view-toggle-btn').addEventListener('click', (e) => {
-      state.viewMode = state.viewMode === 'grid' ? 'compact' : 'grid';
-      const listEl = document.getElementById('igfc-list-container');
-      listEl.classList.toggle('compact-mode', state.viewMode === 'compact');
-      e.currentTarget.textContent =
-        state.viewMode === 'grid' ? 'Görünüm: Kart' : 'Görünüm: Kompakt';
-      saveSettings();
-    });
-
-    document.getElementById('igfc-speed-select').addEventListener('change', (e) => {
-      state.speedMode = e.target.value;
-      saveSettings();
-      const p = SPEED_PROFILES[state.speedMode] || SPEED_PROFILES.safe;
-      showToast(`Toplu işlem hızı: ${p.label}`, 'info');
-    });
-
-    document.getElementById('igfc-footer-toggle').addEventListener('click', () => {
-      state.isLogOpen = !state.isLogOpen;
-      const drawer = document.getElementById('igfc-footer-drawer');
-      const arrow = document.getElementById('igfc-footer-arrow');
-      drawer.classList.toggle('open', state.isLogOpen);
-      arrow.textContent = state.isLogOpen ? '▼ Günlüğü Gizle' : '▲ Günlüğü Göster';
-    });
-
-    document.getElementById('igfc-start-btn').addEventListener('click', () => startScan(false));
-    document.getElementById('igfc-my-account-btn').addEventListener('click', () => startScan(true));
-
-    document.getElementById('igfc-stop-btn').addEventListener('click', () => {
-      state.bulkAbort = true;
-      if (state.abortController) {
-        state.abortController.abort();
-      }
-      addLog('Durdurma komutu gönderildi.', 'warn');
-      showToast('İşlem durduruldu.', 'warn');
-    });
-
-    document.getElementById('igfc-search-input').addEventListener('input', (e) => {
-      state.searchQuery = e.target.value.trim().toLowerCase();
+    // Arama, Filtre, Sıralama
+    document.getElementById('igfc-search-input')?.addEventListener('input', (e) => {
+      state.searchQuery = e.target.value;
       renderList();
     });
 
-    document.getElementById('igfc-filter-select').addEventListener('change', (e) => {
+    document.getElementById('igfc-filter-select')?.addEventListener('change', (e) => {
       state.filterType = e.target.value;
       renderList();
     });
 
-    document.getElementById('igfc-sort-select').addEventListener('change', (e) => {
+    document.getElementById('igfc-sort-select')?.addEventListener('change', (e) => {
       state.sortBy = e.target.value;
       renderList();
     });
 
-    document.getElementById('igfc-copy-btn').addEventListener('click', copyActiveListUsernames);
-    document.getElementById('igfc-csv-btn').addEventListener('click', exportCsv);
-    document.getElementById('igfc-export-btn').addEventListener('click', exportResults);
-
-    document.getElementById('igfc-select-all-btn').addEventListener('click', () => {
+    // Hızlı Seçim Kapsül Butonları
+    document.getElementById('igfc-select-all-btn')?.addEventListener('click', () => {
       const visible = getFilteredAndSortedList();
-      for (const u of visible) state.selectedIds.add(String(u.id));
-      updateBulkButtons();
+      visible.forEach((u) => {
+        if (!isWhitelisted(u.id)) state.selectedIds.add(String(u.id));
+      });
       renderList();
+      updateBulkButtons();
     });
 
-    document.getElementById('igfc-invert-select-btn').addEventListener('click', () => {
+    document.getElementById('igfc-invert-select-btn')?.addEventListener('click', () => {
       const visible = getFilteredAndSortedList();
-      for (const u of visible) {
+      visible.forEach((u) => {
         const uid = String(u.id);
         if (state.selectedIds.has(uid)) state.selectedIds.delete(uid);
-        else state.selectedIds.add(uid);
-      }
-      updateBulkButtons();
+        else if (!isWhitelisted(uid)) state.selectedIds.add(uid);
+      });
       renderList();
+      updateBulkButtons();
     });
 
-    const clearSelection = () => {
+    const clearSelections = () => {
       state.selectedIds.clear();
       state.lastClickedIndex = -1;
-      updateBulkButtons();
       renderList();
+      updateBulkButtons();
     };
+    document.getElementById('igfc-deselect-all-btn')?.addEventListener('click', clearSelections);
+    document.getElementById('igfc-floating-cancel-btn')?.addEventListener('click', clearSelections);
 
-    document.getElementById('igfc-deselect-all-btn').addEventListener('click', clearSelection);
-    document.getElementById('igfc-floating-cancel-btn').addEventListener('click', clearSelection);
+    // Yüzen Toplu İşlem Butonları
+    document.getElementById('igfc-bulk-whitelist-btn')?.addEventListener('click', () => runBulkAction('whitelist'));
+    document.getElementById('igfc-bulk-unfollow-btn')?.addEventListener('click', () => runBulkAction('unfollow'));
+    document.getElementById('igfc-bulk-follow-btn')?.addEventListener('click', () => runBulkAction('follow'));
+    document.getElementById('igfc-bulk-remove-follower-btn')?.addEventListener('click', () => runBulkAction('remove_follower'));
 
-    document.getElementById('igfc-bulk-whitelist-btn').addEventListener('click', () => {
-      if (state.selectedIds.size === 0) return;
-      const count = state.selectedIds.size;
-      for (const id of state.selectedIds) {
-        state.whitelist.add(String(id));
-      }
-      addLog(`${count} kullanıcı koruma (beyaz) listesine eklendi.`, 'success');
-      showToast(`${count} kullanıcı korumaya alındı ★`, 'success');
-      state.selectedIds.clear();
-      saveWhitelist();
-      computeCategories();
-      updateBulkButtons();
-      renderList();
+    // Kopyala & İndir Butonları
+    document.getElementById('igfc-copy-btn')?.addEventListener('click', copyListToClipboard);
+    document.getElementById('igfc-csv-btn')?.addEventListener('click', exportToCSV);
+    document.getElementById('igfc-export-btn')?.addEventListener('click', exportToJSON);
+    document.getElementById('igfc-report-btn')?.addEventListener('click', exportSummaryReportTxt);
+    document.getElementById('igfc-import-json-btn')?.addEventListener('click', () => {
+      document.getElementById('igfc-import-json-input')?.click();
+    });
+    document.getElementById('igfc-import-json-input')?.addEventListener('change', (e) => {
+      importOfficialJsonFiles(e.target.files);
+    });
+    document.getElementById('igfc-lang-btn')?.addEventListener('click', (e) => {
+      state.lang = state.lang === 'tr' ? 'en' : 'tr';
+      const isEn = state.lang === 'en';
+      e.currentTarget.textContent = isEn ? '🌐 EN' : '🌐 TR';
+      const setTxt = (id, txt) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = txt;
+      };
+      setTxt('igfc-my-account-btn', isEn ? '⚡ Scan My Account' : '⚡ Kendi Hesabımı Tara');
+      setTxt('igfc-start-btn', isEn ? '🔍 Scan User' : '🔍 Kullanıcıyı Tara');
+      setTxt('igfc-unfollow-last-btn', isEn ? '🎯 Unfollow Last' : '🎯 Son Takip Kişisini Çıkart');
+      setTxt('igfc-stop-btn', isEn ? '⏹ Stop' : '⏹ Durdur');
+      setTxt('igfc-select-all-btn', isEn ? '☑ Select All' : '☑ Tümünü Seç');
+      setTxt('igfc-invert-select-btn', isEn ? '🔀 Invert' : '🔀 Tersini Seç');
+      setTxt('igfc-deselect-all-btn', isEn ? '☐ Clear' : '☐ Temizle');
+      showToast(isEn ? 'Language switched to English.' : 'Dil Türkçe olarak değiştirildi.', 'info');
     });
 
-    document.getElementById('igfc-bulk-unfollow-btn').addEventListener('click', () =>
-      runBulkAction('unfollow')
-    );
-    document.getElementById('igfc-bulk-follow-btn').addEventListener('click', () =>
-      runBulkAction('follow')
-    );
-
-    const switchTab = (tabName) => {
-      state.activeTab = tabName;
-      state.selectedIds.clear();
-      state.lastClickedIndex = -1;
-      document.querySelectorAll('.igfc-tab').forEach((b) => {
-        b.classList.toggle('active', b.dataset.tab === tabName);
-      });
-      document.querySelectorAll('.igfc-stat-box').forEach((box) => {
-        box.classList.toggle('active-stat', box.dataset.statTab === tabName);
-      });
-      updateBulkButtons();
-      renderList();
-    };
-
+    // Sekmeler ve İstatistik Kutuları
     document.querySelectorAll('.igfc-tab').forEach((btn) => {
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
@@ -2784,25 +3271,11 @@
     document.querySelectorAll('.igfc-stat-box').forEach((box) => {
       box.addEventListener('click', () => switchTab(box.dataset.statTab));
     });
-
-    // Önbellekte önceki tarama varsa otomatik yükle
-    if (loadLastScanCache()) {
-      computeCategories();
-      renderList();
-      updateProgress(100);
-      const cacheInfoEl = document.getElementById('igfc-cache-info');
-      if (cacheInfoEl && state.lastScannedAt) {
-        const dt = new Date(state.lastScannedAt).toLocaleTimeString('tr-TR', {
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-        cacheInfoEl.textContent = `(Son: @${state.username} • ${dt})`;
-      }
-      updateStatus(
-        `Tamamlandı! Takipçi: ${state.followers.length} | Takip Edilen: ${state.following.length} | Seni Takip Etmeyen: ${state.nonFollowers.length}`
-      );
-    }
   }
+
+  // ============================================================================
+  // LİSTE HESAPLAMA, FİLTRELEME, SIRALAMA VE RENDER FONKSİYONLARI
+  // ============================================================================
 
   function updateStatus(message) {
     const el = document.getElementById('igfc-status-msg');
@@ -2811,664 +3284,715 @@
 
   function updateProgress(pct) {
     const clamped = Math.max(0, Math.min(100, Math.round(pct)));
-    const pctEl = document.getElementById('igfc-progress-pct');
-    const fillEl = document.getElementById('igfc-progress-fill');
-    if (pctEl) pctEl.textContent = `%${clamped}`;
-    if (fillEl) fillEl.style.width = `${clamped}%`;
+    const fill = document.getElementById('igfc-progress-fill');
+    const lbl = document.getElementById('igfc-progress-pct');
+    if (fill) fill.style.width = `${clamped}%`;
+    if (lbl) lbl.textContent = `${clamped}%`;
+  }
+
+  function addLog(msg, type = 'info') {
+    const list = document.getElementById('igfc-log-list');
+    const preview = document.getElementById('igfc-last-log-preview');
+    const time = new Date().toLocaleTimeString('tr-TR');
+    const lineText = `[${time}] ${msg}`;
+
+    if (preview) preview.textContent = lineText;
+    if (!list) return;
+
+    const div = document.createElement('div');
+    if (type === 'error') div.style.color = '#f87171';
+    else if (type === 'warn') div.style.color = '#fbbf24';
+    else if (type === 'success') div.style.color = '#34d399';
+    div.textContent = lineText;
+    list.prepend(div);
+  }
+  const logMessage = addLog;
+
+  function showToast(msg, type = 'info') {
+    const container = document.getElementById('igfc-toast-container');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = `igfc-toast ${type}`;
+    toast.textContent = msg;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 3800);
   }
 
   function updateBulkButtons() {
+    const bar = document.getElementById('igfc-floating-bar');
+    const lbl = document.getElementById('igfc-floating-count');
+    if (!bar || !lbl) return;
     const count = state.selectedIds.size;
-    const floatingBar = document.getElementById('igfc-floating-bar');
-    const countEl = document.getElementById('igfc-floating-count');
-    if (countEl) countEl.textContent = `${count} kişi seçildi`;
-    if (floatingBar) {
-      floatingBar.classList.toggle('visible', count > 0);
-    }
+    lbl.textContent = `${count} kişi seçildi`;
+    bar.classList.toggle('visible', count > 0);
   }
 
   function computeCategories() {
-    const followerIdSet = new Set(state.followers.map((u) => String(u.id)));
-    const followingIdSet = new Set(state.following.map((u) => String(u.id)));
+    const followerSet = new Set(state.followers.map((u) => String(u.id)));
+    const followingSet = new Set(state.following.map((u) => String(u.id)));
 
-    state.nonFollowers = state.following.filter(
-      (u) => !followerIdSet.has(String(u.id)) && !state.whitelist.has(String(u.id))
-    );
-    state.fans = state.followers.filter((u) => !followingIdSet.has(String(u.id)));
-    state.mutuals = state.following.filter((u) => followerIdSet.has(String(u.id)));
+    state.nonFollowers = [];
+    state.mutuals = [];
+    state.suspicious = [];
 
-    state.suspicious = state.following.filter((u) => {
-      if (state.whitelist.has(String(u.id))) return false;
-      const isNonFlw = !followerIdSet.has(String(u.id));
-      const info = computeSuspicionInfo(u, isNonFlw);
-      return info.isSuspicious;
+    for (const u of state.following) {
+      const uid = String(u.id);
+      const isNonFollower = !followerSet.has(uid);
+      const susp = computeSuspicionInfo(u, isNonFollower);
+      u.suspicionScore = susp.score;
+      u.suspicionReasons = susp.reasons;
+
+      if (isNonFollower) state.nonFollowers.push(u);
+      else state.mutuals.push(u);
+
+      if (susp.isSuspicious) state.suspicious.push(u);
+    }
+
+    state.fans = state.followers.filter((u) => {
+      const uid = String(u.id);
+      const susp = computeSuspicionInfo(u, false);
+      u.suspicionScore = susp.score;
+      u.suspicionReasons = susp.reasons;
+      return !followingSet.has(uid);
     });
 
-    // İstatistik Kartları
-    document.getElementById('igfc-stat-followers').textContent = state.followers.length;
-    document.getElementById('igfc-stat-following').textContent = state.following.length;
-    document.getElementById('igfc-stat-nonfollowers').textContent = state.nonFollowers.length;
-    document.getElementById('igfc-stat-suspicious').textContent = state.suspicious.length;
-    document.getElementById('igfc-stat-fans').textContent = state.fans.length;
-    document.getElementById('igfc-stat-mutuals').textContent = state.mutuals.length;
-    document.getElementById('igfc-stat-lost').textContent = state.lostFollowers.length;
+    updateStatsUI();
+  }
 
-    // Sekme Rozet Sayıları
-    document.getElementById('igfc-cnt-nonFollowers').textContent = state.nonFollowers.length;
-    document.getElementById('igfc-cnt-suspicious').textContent = state.suspicious.length;
-    document.getElementById('igfc-cnt-fans').textContent = state.fans.length;
-    document.getElementById('igfc-cnt-mutuals').textContent = state.mutuals.length;
-    document.getElementById('igfc-cnt-lostFollowers').textContent = state.lostFollowers.length;
-    document.getElementById('igfc-cnt-newFollowers').textContent = state.newFollowers.length;
-    document.getElementById('igfc-cnt-whitelist').textContent = state.whitelist.size;
-    document.getElementById('igfc-cnt-history').textContent = state.unfollowHistory.length;
+  function updateStatsUI() {
+    const setTxt = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = String(val);
+    };
+    setTxt('igfc-stat-nonfollowers', state.nonFollowers.length);
+    setTxt('igfc-stat-suspicious', state.suspicious.length);
+    setTxt('igfc-stat-fans', state.fans.length);
+    setTxt('igfc-stat-mutuals', state.mutuals.length);
+    setTxt('igfc-stat-lost', state.lostFollowers.length);
+    setTxt('igfc-stat-followers', state.followers.length);
+    setTxt('igfc-stat-following', state.following.length);
+
+    setTxt('igfc-cnt-nonFollowers', state.nonFollowers.length);
+    setTxt('igfc-cnt-suspicious', state.suspicious.length);
+    setTxt('igfc-cnt-fans', state.fans.length);
+    setTxt('igfc-cnt-mutuals', state.mutuals.length);
+    setTxt('igfc-cnt-lostFollowers', state.lostFollowers.length);
+    setTxt('igfc-cnt-newFollowers', state.newFollowers.length);
+    setTxt('igfc-cnt-favorites', state.favorites.size);
+    setTxt('igfc-cnt-whitelist', state.whitelist.size);
+    setTxt('igfc-cnt-history', state.unfollowHistory.length);
+  }
+
+  function switchTab(tabName) {
+    state.activeTab = tabName;
+    state.selectedIds.clear();
+    state.lastClickedIndex = -1;
+    updateBulkButtons();
+
+    document.querySelectorAll('.igfc-tab').forEach((b) => {
+      b.classList.toggle('active', b.dataset.tab === tabName);
+    });
+    document.querySelectorAll('.igfc-stat-box').forEach((b) => {
+      b.classList.toggle('active', b.dataset.statTab === tabName);
+    });
+    renderList();
   }
 
   function getActiveList() {
-    if (state.activeTab === 'nonFollowers') return state.nonFollowers;
-    if (state.activeTab === 'suspicious') return state.suspicious;
-    if (state.activeTab === 'fans') return state.fans;
-    if (state.activeTab === 'mutuals') return state.mutuals;
-    if (state.activeTab === 'lostFollowers') return state.lostFollowers;
-    if (state.activeTab === 'newFollowers') return state.newFollowers;
-    if (state.activeTab === 'allFollowers') return state.followers;
-    if (state.activeTab === 'allFollowing') return state.following;
-    if (state.activeTab === 'history') return state.unfollowHistory;
-    if (state.activeTab === 'whitelist') {
-      const allKnown = [...state.following, ...state.followers];
-      const map = new Map(allKnown.map((u) => [String(u.id), u]));
-      return [...state.whitelist].map(
-        (id) =>
-          map.get(String(id)) || {
-            id: String(id),
-            username: `id_${id}`,
-            full_name: 'Korunan Kullanıcı',
-            profile_pic_url: '',
-          }
-      );
+    switch (state.activeTab) {
+      case 'nonFollowers':
+        return state.nonFollowers;
+      case 'suspicious':
+        return state.suspicious;
+      case 'fans':
+        return state.fans;
+      case 'mutuals':
+        return state.mutuals;
+      case 'lostFollowers':
+        return state.lostFollowers;
+      case 'newFollowers':
+        return state.newFollowers;
+      case 'allFollowers':
+        return state.followers;
+      case 'allFollowing':
+        return state.following;
+      case 'favorites': {
+        const mapFav = new Map();
+        [...state.following, ...state.followers].forEach((u) => mapFav.set(String(u.id), u));
+        return [...state.favorites].map(
+          (id) => mapFav.get(String(id)) || { id, username: `user_${id}`, full_name: 'Favori Hesap' }
+        );
+      }
+      case 'whitelist': {
+        const map = new Map();
+        [...state.following, ...state.followers].forEach((u) => map.set(String(u.id), u));
+        return [...state.whitelist].map(
+          (id) => map.get(String(id)) || { id, username: `user_${id}`, full_name: 'Korunan Hesap' }
+        );
+      }
+      case 'history':
+        return state.unfollowHistory;
+      default:
+        return state.nonFollowers;
     }
-    return [];
   }
 
   function getFilteredAndSortedList() {
     let list = [...getActiveList()];
-    const followerIdSet = new Set(state.followers.map((u) => String(u.id)));
+    const q = state.searchQuery.trim().toLowerCase();
 
-    if (state.searchQuery) {
+    if (q) {
+      const tokens = q.split(',').map((t) => t.trim()).filter(Boolean);
+      const includeTerms = tokens.filter((t) => !t.startsWith('!'));
+      const excludeTerms = tokens.filter((t) => t.startsWith('!') && t.length > 1).map((t) => t.slice(1));
+
       list = list.filter((u) => {
-        const note = (state.userNotes[String(u.id)] || '').toLowerCase();
-        return (
-          u.username?.toLowerCase().includes(state.searchQuery) ||
-          u.full_name?.toLowerCase().includes(state.searchQuery) ||
-          note.includes(state.searchQuery)
-        );
+        const hay = `${u.username || ''} ${u.full_name || ''} ${u.id || ''} ${getUserNote(u.id) || ''} ${getUserTag(u.id) || ''}`.toLowerCase();
+        if (excludeTerms.some((ex) => hay.includes(ex))) return false;
+        if (includeTerms.length === 0) return true;
+        return includeTerms.some((inc) => hay.includes(inc));
       });
     }
 
-    if (state.filterType === 'verified') {
-      list = list.filter((u) => Boolean(u.is_verified));
-    } else if (state.filterType === 'private') {
-      list = list.filter((u) => Boolean(u.is_private));
-    } else if (state.filterType === 'public') {
-      list = list.filter((u) => !u.is_private);
-    } else if (state.filterType === 'noted') {
-      list = list.filter((u) => Boolean(state.userNotes[String(u.id)]));
-    } else if (state.filterType === 'suspicious') {
-      list = list.filter(
-        (u) => computeSuspicionInfo(u, !followerIdSet.has(String(u.id))).isSuspicious
-      );
+    if (state.filterType === 'verified') list = list.filter((u) => u.is_verified);
+    else if (state.filterType === 'unverified') list = list.filter((u) => !u.is_verified);
+    else if (state.filterType === 'private') list = list.filter((u) => u.is_private);
+    else if (state.filterType === 'public') list = list.filter((u) => !u.is_private);
+    else if (state.filterType === 'suspicious') list = list.filter((u) => (u.suspicionScore || 0) >= 45);
+    else if (state.filterType === 'whitelist') list = list.filter((u) => isWhitelisted(u.id));
+    else if (state.filterType === 'hasNote' || state.filterType === 'noted') {
+      list = list.filter((u) => Boolean(getUserNote(u.id)));
+    } else if (state.filterType.startsWith('tag:')) {
+      const targetTag = state.filterType.slice(4);
+      list = list.filter((u) => getUserTag(u.id) === targetTag);
     }
 
-    if (state.sortBy === 'az') {
+    if (state.sortBy === 'oldest') {
+      list.reverse();
+    } else if (state.sortBy === 'az') {
       list.sort((a, b) => (a.username || '').localeCompare(b.username || ''));
     } else if (state.sortBy === 'za') {
       list.sort((a, b) => (b.username || '').localeCompare(a.username || ''));
     } else if (state.sortBy === 'name') {
-      list.sort((a, b) =>
-        (a.full_name || a.username || '').localeCompare(b.full_name || b.username || '')
-      );
+      list.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
     } else if (state.sortBy === 'suspicious') {
-      list.sort(
-        (a, b) =>
-          computeSuspicionInfo(b, !followerIdSet.has(String(b.id))).score -
-          computeSuspicionInfo(a, !followerIdSet.has(String(a.id))).score
-      );
+      list.sort((a, b) => (b.suspicionScore || 0) - (a.suspicionScore || 0));
     }
 
     return list;
   }
 
+  function toggleCardSelection(index, uid, checked, shiftKey, currentVisibleList) {
+    if (shiftKey && state.lastClickedIndex !== -1 && state.lastClickedIndex !== index) {
+      const start = Math.min(state.lastClickedIndex, index);
+      const end = Math.max(state.lastClickedIndex, index);
+      for (let i = start; i <= end; i++) {
+        const item = currentVisibleList[i];
+        if (!item) continue;
+        const itemUid = String(item.id);
+        if (checked && !isWhitelisted(itemUid)) {
+          state.selectedIds.add(itemUid);
+        } else if (!checked) {
+          state.selectedIds.delete(itemUid);
+        }
+      }
+      state.lastClickedIndex = index;
+      renderList();
+      updateBulkButtons();
+      return;
+    }
+
+    state.lastClickedIndex = index;
+    if (checked && !isWhitelisted(uid)) state.selectedIds.add(uid);
+    else state.selectedIds.delete(uid);
+    updateBulkButtons();
+  }
+
+  function openInspect(user) {
+    openUserDetailModal(user);
+  }
+
+  function renderUserCard(u, index, currentVisibleList) {
+    const uid = String(u.id);
+    const isSelected = state.selectedIds.has(uid);
+    const isProtected = isWhitelisted(uid);
+    const isFav = isFavorite(uid);
+    const note = getUserNote(uid);
+    const userTag = getUserTag(uid);
+    const isLastFollowed = state.following[0] && String(state.following[0].id) === uid;
+    const isLastFollower = state.followers[0] && String(state.followers[0].id) === uid;
+
+    const followingIds = new Set(state.following.map((item) => String(item.id)));
+    const followerIds = new Set(state.followers.map((item) => String(item.id)));
+    const youFollow = followingIds.has(uid);
+    const followsYou = followerIds.has(uid);
+
+    const card = document.createElement('div');
+    card.className = `igfc-user-card${isSelected ? ' selected' : ''}`;
+    card.dataset.userid = uid;
+
+    let historyInfoHtml = '';
+    if (state.activeTab === 'history' && u.timestamp) {
+      const dt = new Date(u.timestamp).toLocaleString('tr-TR');
+      const actLabel =
+        u.actionType === 'follow'
+          ? '➕ Takip Edildi'
+          : u.actionType === 'remove_follower' || u.actionType === 'remove_last_follower'
+          ? '❌ Takipçilerden Çıkarıldı'
+          : '🚫 Takipten Çıkarıldı';
+      historyInfoHtml = `<div style="color:#a78bfa;font-size:11px;">🕒 ${actLabel} • ${escapeHtml(dt)}</div>`;
+    }
+
+    card.innerHTML = `
+      <div class="igfc-card-top">
+        <input type="checkbox" class="igfc-card-check" ${isSelected ? 'checked' : ''} title="Seç (Shift tuşu ile aralık seçimi)" />
+        <img class="igfc-avatar" alt="@${escapeHtml(u.username)}" title="Canlı profil detayını incele" />
+        <div class="igfc-card-info">
+          <div>
+            <a href="https://www.instagram.com/${encodeURIComponent(u.username)}/" target="_blank" rel="noopener noreferrer" class="igfc-username">
+              @${escapeHtml(u.username)}
+            </a>
+            ${u.is_verified ? '<span class="igfc-tag-verified" title="Onaylı Hesap">✓ Onaylı</span>' : ''}
+            ${u.is_private ? '<span class="igfc-tag-private" title="Gizli Hesap">🔒 Gizli</span>' : ''}
+          </div>
+          <div class="igfc-fullname">${escapeHtml(u.full_name || 'İsim belirtilmemiş')}</div>
+          <div class="igfc-userid">ID: ${escapeHtml(uid)}</div>
+          <div>
+            ${isLastFollowed ? '<span class="igfc-tag-last">🕒 Son Takip Edilen (#1)</span>' : ''}
+            ${isLastFollower ? '<span class="igfc-tag-last">🆕 Son Takipçi (#1)</span>' : ''}
+          </div>
+          ${u.suspicionScore >= 45 ? `<div style="color:#f87171;font-size:11px;">⚠️ Şüphe: %${u.suspicionScore} (${escapeHtml((u.suspicionReasons || []).join(', '))})</div>` : ''}
+          ${note ? `<div style="color:#38bdf8;font-size:11px;">📝 ${escapeHtml(note)}</div>` : ''}
+          ${historyInfoHtml}
+        </div>
+      </div>
+      <div class="igfc-card-actions">
+        <button class="igfc-btn igfc-btn-secondary igfc-act-inspect" title="Canlı profil ve biyografi incele">🔍 İncele</button>
+        <select class="igfc-select igfc-act-tag" style="padding:3px 6px;font-size:11px;" title="Kategori Etiketi Ata">
+          <option value="">🏷️ Etiket</option>
+          <option value="Arkadaş" ${userTag === 'Arkadaş' ? 'selected' : ''}>🟢 Arkadaş</option>
+          <option value="İş" ${userTag === 'İş' ? 'selected' : ''}>🔵 İş</option>
+          <option value="Aile" ${userTag === 'Aile' ? 'selected' : ''}>🟣 Aile</option>
+          <option value="VIP" ${userTag === 'VIP' ? 'selected' : ''}>⭐ VIP</option>
+        </select>
+        <button class="igfc-btn ${isFav ? 'igfc-btn-primary' : 'igfc-btn-secondary'} igfc-act-fav" title="Favorilere ekle/çıkar">
+          ${isFav ? '💛 Favori' : '🤍 Favori'}
+        </button>
+        <button class="igfc-btn ${isProtected ? 'igfc-btn-warning' : 'igfc-btn-secondary'} igfc-act-whitelist" title="Koruma listesine ekle/çıkar">
+          ${isProtected ? '★ Korunuyor' : '☆ Koru'}
+        </button>
+        ${
+          youFollow
+            ? `<button class="igfc-btn igfc-btn-danger igfc-act-unfollow" ${isProtected ? 'disabled' : ''}>🚫 Takipten Çık</button>`
+            : `<button class="igfc-btn igfc-btn-success igfc-act-follow">➕ Takip Et</button>`
+        }
+        ${
+          followsYou && (state.activeTab === 'fans' || state.activeTab === 'allFollowers' || state.activeTab === 'suspicious')
+            ? `<button class="igfc-btn igfc-btn-warning igfc-act-remove-follower" ${isProtected ? 'disabled' : ''} title="Seni takip etmesini engelle / takipçilerden çıkar">❌ Takipçiden Çıkar</button>`
+            : ''
+        }
+      </div>
+    `;
+
+    hydrateAvatarImage(card.querySelector('.igfc-avatar'), u);
+
+    const checkbox = card.querySelector('.igfc-card-check');
+    checkbox?.addEventListener('click', (e) => {
+      toggleCardSelection(index, uid, e.target.checked, e.shiftKey, currentVisibleList);
+      card.classList.toggle('selected', state.selectedIds.has(uid));
+    });
+
+    card.querySelector('.igfc-avatar')?.addEventListener('click', () => openInspect(u));
+    card.querySelector('.igfc-act-inspect')?.addEventListener('click', () => openInspect(u));
+    card.querySelector('.igfc-act-tag')?.addEventListener('change', (e) => {
+      setUserTag(uid, e.target.value);
+      showToast(`@${u.username} etiketi güncellendi.`, 'info');
+    });
+
+    card.querySelector('.igfc-act-fav')?.addEventListener('click', () => {
+      toggleFavorite(uid);
+      renderList();
+    });
+
+    card.querySelector('.igfc-act-whitelist')?.addEventListener('click', () => {
+      toggleWhitelist(uid);
+      renderList();
+    });
+
+    card.querySelector('.igfc-act-unfollow')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = '⏳...';
+      try {
+        await unfollowUser(uid);
+        saveUnfollowHistory(u, 'unfollow');
+        state.following = state.following.filter((item) => String(item.id) !== uid);
+        state.selectedIds.delete(uid);
+        computeCategories();
+        saveLastScanCache();
+        renderList();
+        showToast(`@${u.username} takipten çıkarıldı.`, 'success');
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = '🚫 Takipten Çık';
+        showToast(`Hata: ${err.message}`, 'error');
+      }
+    });
+
+    card.querySelector('.igfc-act-follow')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = '⏳...';
+      try {
+        await followUser(uid);
+        saveUnfollowHistory(u, 'follow');
+        if (!state.following.some((item) => String(item.id) === uid)) {
+          state.following.unshift(u);
+        }
+        computeCategories();
+        saveLastScanCache();
+        renderList();
+        showToast(`@${u.username} takip edildi.`, 'success');
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = '➕ Takip Et';
+        showToast(`Hata: ${err.message}`, 'error');
+      }
+    });
+
+    card.querySelector('.igfc-act-remove-follower')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = '⏳...';
+      try {
+        await removeFollowerUser(uid);
+        saveUnfollowHistory(u, 'remove_follower');
+        state.followers = state.followers.filter((item) => String(item.id) !== uid);
+        state.selectedIds.delete(uid);
+        computeCategories();
+        saveLastScanCache();
+        renderList();
+        showToast(`@${u.username} takipçilerden çıkarıldı.`, 'success');
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = '❌ Takipçiden Çıkar';
+        showToast(`Hata: ${err.message}`, 'error');
+      }
+    });
+
+    return card;
+  }
+
   function renderList() {
     const container = document.getElementById('igfc-list-container');
     if (!container) return;
+    container.innerHTML = '';
 
-    const filtered = getFilteredAndSortedList();
-
-    if (filtered.length === 0) {
-      container.innerHTML = `<div class="igfc-empty">Bu kategoride veya aramada gösterilecek kullanıcı bulunamadı.</div>`;
+    const users = getFilteredAndSortedList();
+    if (users.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-secondary);';
+      empty.textContent = 'Bu sekmede veya filtrede gösterilecek kullanıcı bulunamadı.';
+      container.appendChild(empty);
       return;
     }
 
-    const followingIdSet = new Set(state.following.map((u) => String(u.id)));
-    const followerIdSet = new Set(state.followers.map((u) => String(u.id)));
-    container.innerHTML = '';
-
-    filtered.forEach((user, idx) => {
-      const uid = String(user.id);
-      const isSelected = state.selectedIds.has(uid);
-      const isWhitelisted = state.whitelist.has(uid);
-      const isCurrentlyFollowing = followingIdSet.has(uid);
-      const isFollower = followerIdSet.has(uid);
-      const userNote = state.userNotes[uid] || '';
-      const suspicion = computeSuspicionInfo(user, isCurrentlyFollowing && !isFollower);
-
-      const card = document.createElement('div');
-      card.className = `igfc-card${isSelected ? ' selected' : ''}`;
-
-      card.innerHTML = `
-        <div class="igfc-user-left">
-          <input type="checkbox" class="igfc-checkbox" ${isSelected ? 'checked' : ''} />
-          <img class="igfc-avatar" alt="${escapeHtml(user.username)}" title="Detaylı incelemek için tıklayın" />
-          <div class="igfc-names">
-            <div class="igfc-username-row">
-              <a class="igfc-username" href="https://www.instagram.com/${encodeURIComponent(
-                user.username
-              )}/" target="_blank" rel="noopener noreferrer">
-                @${escapeHtml(user.username)}
-              </a>
-              ${user.is_verified ? '<span class="igfc-tag igfc-tag-verified">✓ Onaylı</span>' : ''}
-              ${user.is_private ? '<span class="igfc-tag igfc-tag-private">🔒 Gizli</span>' : ''}
-              ${
-                suspicion.isSuspicious
-                  ? `<span class="igfc-tag igfc-tag-suspicious" title="${escapeHtml(
-                      suspicion.reasons.join(', ')
-                    )}">👻 %${suspicion.score}</span>`
-                  : ''
-              }
-            </div>
-            ${
-              user.full_name
-                ? `<div class="igfc-fullname">${escapeHtml(user.full_name)}</div>`
-                : ''
-            }
-            ${
-              userNote
-                ? `<div class="igfc-note-badge">📝 ${escapeHtml(userNote)}</div>`
-                : ''
-            }
-          </div>
-        </div>
-        <div class="igfc-card-actions">
-          <button class="igfc-mini-btn inspect-btn" title="Canlı Biyografi ve Hesap Detaylarını İncele">🔍</button>
-          <button class="igfc-mini-btn note-btn" title="Bu kullanıcıya özel not ekle / düzenle">📝</button>
-          <button class="igfc-mini-btn whitelist-btn ${isWhitelisted ? 'whitelisted' : ''}" title="Koruma Listesine Ekle / Çıkar">
-            ${isWhitelisted ? '★ Korunuyor' : '☆ Koru'}
-          </button>
-          ${
-            isCurrentlyFollowing
-              ? `<button class="igfc-mini-btn unfollow">Takibi Bırak</button>`
-              : `<button class="igfc-mini-btn follow">Takip Et</button>`
-          }
-          ${
-            state.activeTab === 'fans' || state.activeTab === 'allFollowers'
-              ? `<button class="igfc-mini-btn remove-follower" title="Bu kişiyi takipçilerinden çıkar">✕</button>`
-              : ''
-          }
-        </div>
-      `;
-
-      const imgEl = card.querySelector('.igfc-avatar');
-      hydrateAvatarImage(imgEl, user.profile_pic_url, user.username, user.full_name);
-
-      const openInspect = (e) => {
-        e.stopPropagation();
-        openUserDetailModal(user, imgEl.src);
-      };
-      imgEl.addEventListener('click', openInspect);
-      card.querySelector('.inspect-btn').addEventListener('click', openInspect);
-
-      const toggleCardSelection = (shiftKey) => {
-        const shouldSelect = !state.selectedIds.has(uid);
-        if (shiftKey && state.lastClickedIndex !== -1) {
-          const start = Math.min(state.lastClickedIndex, idx);
-          const end = Math.max(state.lastClickedIndex, idx);
-          for (let i = start; i <= end; i++) {
-            const rangeUid = String(filtered[i].id);
-            if (shouldSelect) state.selectedIds.add(rangeUid);
-            else state.selectedIds.delete(rangeUid);
-          }
-          state.lastClickedIndex = idx;
-          updateBulkButtons();
-          renderList();
-          return;
-        }
-
-        state.lastClickedIndex = idx;
-        if (shouldSelect) {
-          state.selectedIds.add(uid);
-          card.classList.add('selected');
-          card.querySelector('.igfc-checkbox').checked = true;
-        } else {
-          state.selectedIds.delete(uid);
-          card.classList.remove('selected');
-          card.querySelector('.igfc-checkbox').checked = false;
-        }
-        updateBulkButtons();
-      };
-
-      card.addEventListener('click', (e) => {
-        if (e.target.closest('a, button, input, img')) return;
-        toggleCardSelection(e.shiftKey);
-      });
-
-      const checkbox = card.querySelector('.igfc-checkbox');
-      checkbox.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleCardSelection(e.shiftKey);
-      });
-
-      card.querySelector('.note-btn').addEventListener('click', (e) => {
-        e.stopPropagation();
-        const current = state.userNotes[uid] || '';
-        const entered = window.prompt(
-          `@${user.username} için kişisel notunuz (silmek için boş bırakın):`,
-          current
-        );
-        if (entered === null) return;
-        const trimmed = entered.trim();
-        if (trimmed) {
-          state.userNotes[uid] = trimmed;
-          showToast(`@${user.username} için not kaydedildi 📝`, 'success');
-        } else {
-          delete state.userNotes[uid];
-          showToast(`@${user.username} notu silindi.`, 'info');
-        }
-        saveUserNotes();
-        renderList();
-      });
-
-      card.querySelector('.whitelist-btn').addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (state.whitelist.has(uid)) {
-          state.whitelist.delete(uid);
-          showToast(`@${user.username} korumadan çıkarıldı.`, 'info');
-        } else {
-          state.whitelist.add(uid);
-          showToast(`@${user.username} korumaya alındı ★`, 'success');
-        }
-        saveWhitelist();
-        computeCategories();
-        renderList();
-      });
-
-      const unfollowBtn = card.querySelector('.unfollow');
-      if (unfollowBtn) {
-        unfollowBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          unfollowBtn.disabled = true;
-          unfollowBtn.textContent = '...';
-          try {
-            await unfollowUser(uid);
-            state.following = state.following.filter((u) => String(u.id) !== uid);
-            state.selectedIds.delete(uid);
-            state.unfollowHistory.unshift({
-              ...user,
-              actionAt: new Date().toISOString(),
-            });
-            saveUnfollowHistory();
-            saveLastScanCache();
-            computeCategories();
-            updateBulkButtons();
-            renderList();
-            showToast(`@${user.username} takipten çıkarıldı.`, 'success');
-            addLog(`@${user.username} takipten çıkarıldı.`, 'success');
-          } catch (err) {
-            unfollowBtn.disabled = false;
-            unfollowBtn.textContent = 'Hata!';
-            showToast(`Hata: ${err.message}`, 'error');
-            addLog(`@${user.username} takipten çıkarılamadı: ${err.message}`, 'error');
-          }
-        });
-      }
-
-      const followBtn = card.querySelector('.follow');
-      if (followBtn) {
-        followBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          followBtn.disabled = true;
-          followBtn.textContent = '...';
-          try {
-            await followUser(uid);
-            followBtn.textContent = 'İstek Gönderildi ✓';
-            showToast(`@${user.username} takip edildi.`, 'success');
-            addLog(`@${user.username} takip edildi.`, 'success');
-          } catch (err) {
-            followBtn.disabled = false;
-            followBtn.textContent = 'Hata!';
-            showToast(`Hata: ${err.message}`, 'error');
-          }
-        });
-      }
-
-      const removeFollowerBtn = card.querySelector('.remove-follower');
-      if (removeFollowerBtn) {
-        removeFollowerBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          removeFollowerBtn.disabled = true;
-          try {
-            await removeFollowerUser(uid);
-            state.followers = state.followers.filter((u) => String(u.id) !== uid);
-            saveLastScanCache();
-            computeCategories();
-            renderList();
-            showToast(`@${user.username} takipçilerden çıkarıldı.`, 'success');
-            addLog(`@${user.username} takipçilerden çıkarıldı.`, 'success');
-          } catch (err) {
-            removeFollowerBtn.disabled = false;
-            showToast(`Hata: ${err.message}`, 'error');
-          }
-        });
-      }
-
-      container.appendChild(card);
+    const fragment = document.createDocumentFragment();
+    users.slice(0, 800).forEach((u, idx) => {
+      fragment.appendChild(renderUserCard(u, idx, users));
     });
+    container.appendChild(fragment);
+  }
+
+  // ============================================================================
+  // TARAMA (START / STOP SCAN) VE TOPLU İŞLEM (BULK ACTION) MOTORU
+  // ============================================================================
+
+  function stopScan() {
+    state.bulkAbort = true;
+    if (state.abortController) {
+      state.abortController.abort();
+    }
+    state.isRunning = false;
+    state.isBulkRunning = false;
+    const stopBtn = document.getElementById('igfc-stop-btn');
+    if (stopBtn) stopBtn.disabled = true;
+    updateStatus('İşlem kullanıcı tarafından durduruldu.');
+  }
+
+  async function startScan(forceMyAccount = false) {
+    if (state.isRunning) return;
+    state.isRunning = true;
+    state.abortController = new AbortController();
+
+    const startBtn = document.getElementById('igfc-start-btn');
+    const myBtn = document.getElementById('igfc-my-account-btn');
+    const stopBtn = document.getElementById('igfc-stop-btn');
+    const inputEl = document.getElementById('igfc-username-input');
+
+    if (startBtn) startBtn.disabled = true;
+    if (myBtn) myBtn.disabled = true;
+    if (stopBtn) stopBtn.disabled = false;
+
+    try {
+      let targetUsername = (inputEl?.value || '').trim().replace(/^@/, '');
+      let targetUserId = '';
+      let expectedFollowers = null;
+      let expectedFollowing = null;
+
+      const cookieUserId = getCookie('ds_user_id');
+      const viewer = getLoggedInViewerFromDOM();
+      const isScanningSelf =
+        forceMyAccount ||
+        !targetUsername ||
+        (viewer?.username && viewer.username.toLowerCase() === targetUsername.toLowerCase()) ||
+        (cookieUserId && getDefaultUsername().toLowerCase() === targetUsername.toLowerCase());
+
+      if (isScanningSelf && cookieUserId) {
+        // Kendi hesabımızı tararken web_profile_info çağrısı YAPILMAZ (429 hatasını %100 engeller)
+        targetUserId = String(cookieUserId);
+        targetUsername = viewer?.username || targetUsername || getDefaultUsername() || 'aktif_hesap';
+        if (inputEl) inputEl.value = targetUsername;
+        const domSelf = extractStrictProfileFromScripts(targetUsername);
+        if (domSelf) {
+          expectedFollowers = domSelf.followerCount;
+          expectedFollowing = domSelf.followingCount;
+        }
+      } else {
+        updateStatus(`@${targetUsername || 'hesap'} profil detayları çözümleniyor...`);
+        updateProgress(5);
+        const profile = await resolveUserProfile(targetUsername);
+        targetUserId = profile.id;
+        targetUsername = profile.username;
+        expectedFollowers = profile.followerCount;
+        expectedFollowing = profile.followingCount;
+        if (inputEl) inputEl.value = targetUsername;
+      }
+
+      addLog(`Tarama başladı: @${targetUsername} (ID: ${targetUserId})`, 'info');
+
+      const followers = await fetchFriendshipList(targetUserId, 'followers', expectedFollowers, 10, 55);
+      const following = await fetchFriendshipList(targetUserId, 'following', expectedFollowing, 55, 95);
+
+      state.username = targetUsername;
+      state.userId = targetUserId;
+      state.lastScannedAt = new Date().toISOString();
+      state.followers = followers;
+      state.following = following;
+
+      compareAndSaveSnapshot(targetUserId, followers);
+      computeCategories();
+      saveLastScanCache();
+      saveScanHistory();
+      renderList();
+
+      updateProgress(100);
+      updateStatus(
+        `Tamamlandı! Takipçi: ${state.followers.length} | Takip Edilen: ${state.following.length} | Seni Takip Etmeyen: ${state.nonFollowers.length}`
+      );
+      addLog(
+        `✅ Tarama tamamlandı: ${state.followers.length} takipçi, ${state.following.length} takip edilen, ${state.nonFollowers.length} geri takip etmeyen.`,
+        'success'
+      );
+      showToast(`Tarama tamamlandı! ${state.nonFollowers.length} kişi seni geri takip etmiyor.`, 'success');
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        addLog('⏹ Tarama kullanıcı tarafından iptal edildi.', 'warn');
+      } else {
+        addLog(`❌ Tarama hatası: ${err.message}`, 'error');
+        updateStatus(`Hata: ${err.message}`);
+        showToast(err.message, 'error');
+      }
+    } finally {
+      state.isRunning = false;
+      if (startBtn) startBtn.disabled = false;
+      if (myBtn) myBtn.disabled = false;
+      if (stopBtn) stopBtn.disabled = true;
+    }
   }
 
   async function runBulkAction(actionType = 'unfollow') {
-    if (state.isBulkRunning || state.selectedIds.size === 0) return;
+    if (state.selectedIds.size === 0) return;
 
-    const isUnfollow = actionType === 'unfollow';
-    const pool = isUnfollow ? state.following : state.fans;
-    const targets = pool.filter((u) => state.selectedIds.has(String(u.id)));
-
-    if (targets.length === 0) {
-      showToast('Seçilen kullanıcılar bu işlem için uygun değil.', 'warn');
+    if (actionType === 'whitelist') {
+      state.selectedIds.forEach((id) => state.whitelist.add(String(id)));
+      state.selectedIds.clear();
+      saveWhitelist();
+      updateStatsUI();
+      renderList();
+      updateBulkButtons();
+      showToast('Seçili hesaplar koruma listesine eklendi.', 'success');
       return;
     }
 
-    const speed = SPEED_PROFILES[state.speedMode] || SPEED_PROFILES.safe;
+    if (state.isBulkRunning) return;
     state.isBulkRunning = true;
     state.bulkAbort = false;
 
+    const speed = SPEED_CONFIGS[state.speedMode] || SPEED_CONFIGS.normal;
     const stopBtn = document.getElementById('igfc-stop-btn');
-    const bulkUnfBtn = document.getElementById('igfc-bulk-unfollow-btn');
-    const bulkFlwBtn = document.getElementById('igfc-bulk-follow-btn');
     if (stopBtn) stopBtn.disabled = false;
-    if (bulkUnfBtn) bulkUnfBtn.disabled = true;
-    if (bulkFlwBtn) bulkFlwBtn.disabled = true;
 
-    addLog(
-      `Toplu ${isUnfollow ? 'takipten çıkma' : 'takip etme'} başlatıldı (${
-        targets.length
-      } kişi — ${speed.label}).`,
-      'info'
-    );
-    showToast(`${targets.length} kişi için güvenli toplu işlem başladı.`, 'info');
+    const allKnownMap = new Map();
+    [...state.following, ...state.followers, ...getActiveList()].forEach((u) => {
+      if (u && u.id) allKnownMap.set(String(u.id), u);
+    });
 
-    let done = 0;
+    const targets = [...state.selectedIds]
+      .filter((id) => !isWhitelisted(id))
+      .map((id) => allKnownMap.get(String(id)))
+      .filter(Boolean);
+
+    let completed = 0;
     for (const user of targets) {
-      if (state.bulkAbort) {
-        addLog('Toplu işlem kullanıcı tarafından durduruldu.', 'warn');
-        break;
-      }
-
+      if (state.bulkAbort) break;
       try {
-        updateStatus(`Toplu işlem (${done + 1}/${targets.length}): @${user.username}...`);
-
-        if (isUnfollow) {
+        if (actionType === 'unfollow') {
           await unfollowUser(user.id);
+          saveUnfollowHistory(user, 'unfollow');
           state.following = state.following.filter((u) => String(u.id) !== String(user.id));
-          state.unfollowHistory.unshift({
-            ...user,
-            actionAt: new Date().toISOString(),
-          });
-          saveUnfollowHistory();
-        } else {
+        } else if (actionType === 'follow') {
           await followUser(user.id);
-          state.following.push(user);
+          saveUnfollowHistory(user, 'follow');
+          if (!state.following.some((u) => String(u.id) === String(user.id))) {
+            state.following.unshift(user);
+          }
+        } else if (actionType === 'remove_follower') {
+          await removeFollowerUser(user.id);
+          saveUnfollowHistory(user, 'remove_follower');
+          state.followers = state.followers.filter((u) => String(u.id) !== String(user.id));
         }
 
-        done++;
         state.selectedIds.delete(String(user.id));
-        saveLastScanCache();
-        computeCategories();
-        updateBulkButtons();
-        renderList();
-        updateProgress(Math.round((done / targets.length) * 100));
-        addLog(
-          `[${done}/${targets.length}] @${user.username} ${
-            isUnfollow ? 'takipten çıkarıldı' : 'takip edildi'
-          }.`,
-          'success'
-        );
+        completed++;
 
-        if (
-          done < targets.length &&
-          !state.bulkAbort &&
-          state.autoCooldown &&
-          done % speed.batchPauseEvery === 0
-        ) {
-          addLog(
-            `🛡️ Anti-Ban Koruması: ${done} işlem tamamlandı, ${speed.batchPauseSec} sn mola veriliyor...`,
-            'warn'
-          );
-          for (let s = speed.batchPauseSec; s > 0; s--) {
-            if (state.bulkAbort) break;
-            updateStatus(
-              `🛡️ Güvenlik Molası (${done}/${targets.length} tamamlandı) — ${s} sn sonra devam edecek...`
-            );
-            await sleep(1000);
-          }
-        } else if (done < targets.length && !state.bulkAbort) {
-          await randomDelay(speed.min, speed.max);
+        const pct = Math.round((completed / targets.length) * 100);
+        updateProgress(pct);
+        updateStatus(`İşleniyor (@${user.username}): ${completed}/${targets.length}`);
+        computeCategories();
+        renderList();
+        updateBulkButtons();
+
+        if (state.autoCooldown && completed % speed.batchSize === 0 && completed < targets.length) {
+          addLog(`🛡️ Anti-Ban molası: ${speed.batchPauseSec} sn bekleniyor...`, 'warn');
+          updateStatus(`Güvenlik molası: ${speed.batchPauseSec} sn bekleniyor...`);
+          await sleep(speed.batchPauseSec * 1000);
+        } else if (completed < targets.length) {
+          await sleep(getRateLimitDelay('action'));
         }
       } catch (err) {
-        addLog(`@${user.username} hata: ${err.message}`, 'error');
-        showToast(`Hata oluştu: ${err.message}`, 'error');
-        break;
+        addLog(`❌ İşlem hatası (@${user.username}): ${err.message}`, 'error');
       }
     }
 
+    saveLastScanCache();
     state.isBulkRunning = false;
     if (stopBtn) stopBtn.disabled = true;
-    if (bulkUnfBtn) bulkUnfBtn.disabled = false;
-    if (bulkFlwBtn) bulkFlwBtn.disabled = false;
-    updateStatus(`Toplu işlem tamamlandı (${done} kişi).`);
-    showToast(`Toplu işlem tamamlandı (${done} kişi).`, 'success');
+    showToast(`Toplu işlem tamamlandı (${completed}/${targets.length}).`, 'success');
   }
 
-  async function copyActiveListUsernames() {
+  // ============================================================================
+  // KOPYALAMA VE DIŞA AKTARMA (CSV / JSON)
+  // ============================================================================
+
+  function copyListToClipboard() {
     const list = getFilteredAndSortedList();
-    if (list.length === 0) return;
-    const text = list.map((u) => `@${u.username} (${u.full_name || '-'})`).join('\n');
-    try {
-      await navigator.clipboard.writeText(text);
-      showToast(`${list.length} kullanıcı panoya kopyalandı!`, 'success');
-      addLog(`${list.length} kullanıcı panoya kopyalandı.`, 'success');
-    } catch (_) {
-      showToast('Panoya kopyalanamadı.', 'error');
+    if (!list.length) {
+      showToast('Kopyalanacak kullanıcı bulunamadı.', 'warning');
+      return;
     }
+    const text = list.map((u) => `@${u.username}`).join('\n');
+    navigator.clipboard.writeText(text);
+    showToast(`${list.length} kullanıcı adı panoya kopyalandı.`, 'success');
   }
+  const copyActiveListUsernames = copyListToClipboard;
 
-  function exportCsv() {
+  function exportToCSV() {
     const list = getFilteredAndSortedList();
-    const header = [
-      'User ID',
-      'Kullanici Adi',
-      'Tam Isim',
-      'Onayli',
-      'Gizli Hesap',
-      'Not',
-      'Profil Linki',
-    ];
+    if (!list.length) {
+      showToast('Dışa aktarılacak veri yok.', 'warning');
+      return;
+    }
+    const headers = ['ID', 'Username', 'Full Name', 'Verified', 'Private', 'Suspicion Score', 'Note', 'Profile URL'];
     const rows = list.map((u) => [
-      u.id,
-      u.username,
-      `"${String(u.full_name || '').replace(/"/g, '""')}"`,
-      u.is_verified ? 'Evet' : 'Hayir',
-      u.is_private ? 'Evet' : 'Hayir',
-      `"${String(state.userNotes[String(u.id)] || '').replace(/"/g, '""')}"`,
-      `https://www.instagram.com/${u.username}/`,
+      `"${u.id}"`,
+      `"${(u.username || '').replace(/"/g, '""')}"`,
+      `"${(u.full_name || '').replace(/"/g, '""')}"`,
+      u.is_verified ? 'Yes' : 'No',
+      u.is_private ? 'Yes' : 'No',
+      u.suspicionScore || 0,
+      `"${(getUserNote(u.id) || '').replace(/"/g, '""')}"`,
+      `"https://www.instagram.com/${u.username}/"`,
     ]);
-
-    const csvContent =
-      '\uFEFF' + [header.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `instagram-${state.activeTab}-${state.username || 'liste'}.csv`;
+    a.download = `instagram-follow-check-${state.username || 'export'}-${state.activeTab}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`${list.length} kayıt CSV olarak indirildi.`, 'success');
+    showToast('CSV dosyası indirildi.', 'success');
   }
+  const exportCsv = exportToCSV;
 
-  function exportResults() {
+  function exportToJSON() {
     const payload = {
-      scannedAt: new Date().toISOString(),
+      exportedAt: new Date().toISOString(),
       username: state.username,
       userId: state.userId,
       counts: {
         followers: state.followers.length,
         following: state.following.length,
         nonFollowers: state.nonFollowers.length,
-        suspicious: state.suspicious.length,
         fans: state.fans.length,
         mutuals: state.mutuals.length,
+        suspicious: state.suspicious.length,
         lostFollowers: state.lostFollowers.length,
         newFollowers: state.newFollowers.length,
       },
+      lastFollowedPerson: getLastFollowedPerson(),
+      lastFollowerPerson: getLastFollowerPerson(),
+      followers: state.followers,
+      following: state.following,
       nonFollowers: state.nonFollowers,
-      suspicious: state.suspicious,
       fans: state.fans,
       mutuals: state.mutuals,
+      suspicious: state.suspicious,
       lostFollowers: state.lostFollowers,
       newFollowers: state.newFollowers,
       whitelist: [...state.whitelist],
       userNotes: state.userNotes,
+      unfollowHistory: state.unfollowHistory,
     };
-
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `instagram-follow-check-${state.username || 'export'}.json`;
+    a.download = `instagram-follow-check-${state.username || 'export'}-full.json`;
     a.click();
     URL.revokeObjectURL(url);
     showToast('JSON raporu indirildi.', 'success');
   }
+  const exportResults = exportToJSON;
 
-  async function startScan(forceMyAccount = false) {
-    if (state.isRunning) return;
+  // ============================================================================
+  // BAŞLATMA (INITIALIZATION)
+  // ============================================================================
 
-    const inputEl = document.getElementById('igfc-username-input');
-    const startBtn = document.getElementById('igfc-start-btn');
-    const myAccBtn = document.getElementById('igfc-my-account-btn');
-    const stopBtn = document.getElementById('igfc-stop-btn');
-
-    state.isRunning = true;
-    state.abortController = new AbortController();
-    state.selectedIds.clear();
-    updateBulkButtons();
-
-    startBtn.disabled = true;
-    myAccBtn.disabled = true;
-    stopBtn.disabled = false;
-    updateProgress(0);
-
-    try {
-      const cookieUserId = getCookie('ds_user_id');
-      let profile;
-
-      if (forceMyAccount && cookieUserId) {
-        const viewer = getLoggedInViewerFromDOM();
-        profile = {
-          id: String(cookieUserId),
-          username: viewer?.username || inputEl.value.trim() || 'aktif_hesap',
-          followerCount: 0,
-          followingCount: 0,
-        };
-      } else {
-        const requestedUsername = inputEl.value.trim();
-        profile = await resolveUserProfile(requestedUsername);
-      }
-
-      state.userId = profile.id;
-      state.username = profile.username;
-
-      updateProgress(5);
-      updateStatus(
-        `Kullanıcı doğrulandı: @${profile.username} (ID: ${profile.id}). Takipçiler alınıyor...`
-      );
-      addLog(`Tarama başlatıldı: @${profile.username} (ID: ${profile.id})`, 'info');
-
-      state.followers = await fetchFriendshipList(
-        profile.id,
-        'followers',
-        profile.followerCount,
-        5,
-        50
-      );
-      addLog(`${state.followers.length} takipçi çekildi.`, 'success');
-
-      state.following = await fetchFriendshipList(
-        profile.id,
-        'following',
-        profile.followingCount,
-        50,
-        98
-      );
-      addLog(`${state.following.length} takip edilen çekildi.`, 'success');
-
-      if (
-        state.followers.length === 0 &&
-        state.following.length === 0 &&
-        cookieUserId &&
-        String(profile.id) !== String(cookieUserId)
-      ) {
-        addLog(
-          `İlk ID (${profile.id}) boş döndü, aktif oturum ID'si (${cookieUserId}) ile yeniden taranıyor...`,
-          'warn'
-        );
-        state.userId = String(cookieUserId);
-        state.followers = await fetchFriendshipList(cookieUserId, 'followers', 0, 5, 50);
-        state.following = await fetchFriendshipList(cookieUserId, 'following', 0, 50, 98);
-      }
-
-      state.lastScannedAt = new Date().toISOString();
-      compareAndSaveSnapshot(state.userId, state.followers);
-      saveLastScanCache();
-      computeCategories();
-      renderList();
-      updateProgress(100);
-
-      const cacheInfoEl = document.getElementById('igfc-cache-info');
-      if (cacheInfoEl) {
-        const dt = new Date(state.lastScannedAt).toLocaleTimeString('tr-TR', {
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-        cacheInfoEl.textContent = `(Son: @${state.username} • ${dt})`;
-      }
-
-      updateStatus(
-        `Tamamlandı! Takipçi: ${state.followers.length} | Takip Edilen: ${state.following.length} | Seni Takip Etmeyen: ${state.nonFollowers.length} | Şüpheli: ${state.suspicious.length}`
-      );
-      showToast(
-        `Tarama tamamlandı! ${state.nonFollowers.length} kişi seni geri takip etmiyor.`,
-        'success'
-      );
-    } catch (err) {
-      updateStatus(`Hata: ${err.message}`);
-      addLog(`Hata: ${err.message}`, 'error');
-      showToast(`Hata: ${err.message}`, 'error');
-    } finally {
-      state.isRunning = false;
-      startBtn.disabled = false;
-      myAccBtn.disabled = false;
-      stopBtn.disabled = true;
-    }
-  }
-
+  loadSettings();
+  getWhitelist();
+  getNotes();
+  loadUserTags();
+  loadFavorites();
+  loadUnfollowHistory();
+  getScanHistory();
+  const hasCache = loadLastScanCache();
   createUI();
+  if (hasCache) {
+    computeCategories();
+    renderList();
+    updateCacheInfoUI();
+    addLog(`Önbellekten son tarama yüklendi: @${state.username}`, 'info');
+  }
 })();
