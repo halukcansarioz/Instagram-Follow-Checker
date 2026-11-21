@@ -5,7 +5,9 @@ A browser-based Instagram follower analysis tool that helps users identify follo
 ![JavaScript](https://img.shields.io/badge/JavaScript-ES6-yellow)
 ![Platform](https://img.shields.io/badge/Platform-Web-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
-
+> [!NOTE]
+> Looking for the newer Pro edition? Check out **[Instagram-Follow-Checker-Pro (v30.8)](https://github.com/halukcansarioz/Instagram-Follow-Checker-Pro)** for the latest features and improvements.
+> 
 ---
 
 ## 📖 Overview
