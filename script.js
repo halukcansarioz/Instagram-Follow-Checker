@@ -1,13 +1,22 @@
 /**
- * Instagram Follow Checker Pro – Tam Sürüm (v10.2 Pro Ultimate)
- * Kusursuz Responsive Header, Modern Segmented Tabs, Otomatik Tarayıcı Teması,
- * 429 Rate-Limit Koruması, Karşılaştırma & Ayarlar Modalları ve "Son Takip Kişisini Çıkart" Modülü
+ * Instagram Follow Checker Pro – Tam Sürüm (v10.7 Pro Ultimate)
+ * Sade, Hızlı & Kararlı Sürüm:
+ * - Başka profil tarama (isScanningSelf) hatası düzeltildi
+ * - Durdur sonrası AbortController kilitlenmesi giderildi
+ * - HTTP 429 hız sınırında anında durdurma + görünür hata şeridi eklendi
+ * - İmleç (cursor) sonsuz döngü koruması ve O(N) hızlı liste render eklendi
+ * - Konsolda tekrar çalıştırmada event sızıntısı ve localStorage kota taşması engellendi
  */
 
 (() => {
   'use strict';
 
   const EXISTING_ID = 'ig-follow-checker-root';
+  if (typeof window.__igfcCleanup === 'function') {
+    try {
+      window.__igfcCleanup();
+    } catch (_) {}
+  }
   const existingEl = document.getElementById(EXISTING_ID);
   if (existingEl) existingEl.remove();
 
@@ -15,8 +24,12 @@
   const IG_APP_ID = '936619743392459';
   const FOLLOWERS_QUERY_HASH = 'c76146de99bb02f6415203be841dd25a';
   const FOLLOWING_QUERY_HASH = 'd04b0a864b4b54837c0d870b0e77e076';
+  const FOLLOWERS_QUERY_HASH_ALT = '37479f2b8209594dde7facb0d904896a';
+  const FOLLOWING_QUERY_HASH_ALT = '58712303d941c6855d4e888c5f0cd22f';
   const TIMELINE_DOC_ID = '9310670392322965';
-  const PAGE_SIZE = 50;
+  const REST_FOLLOWERS_PAGE_SIZE = 12;
+  const REST_FOLLOWING_PAGE_SIZE = 24;
+  const GQL_PAGE_SIZE = 24;
 
   // LocalStorage Anahtarları
   const STORAGE_WHITELIST = 'ig_fc_whitelist_v5';
@@ -33,9 +46,9 @@
   // Hız Modu Yapılandırması
   const SPEED_CONFIGS = {
     safe: {
-      label: '🛡️ Güvenli Mod',
+      label: '🛡️ Güvenli Mod (Önerilen)',
       scanDelayMin: 1200,
-      scanDelayMax: 2400,
+      scanDelayMax: 2200,
       actionDelayMin: 4000,
       actionDelayMax: 7500,
       batchSize: 10,
@@ -43,7 +56,7 @@
     },
     normal: {
       label: '⚖️ Dengeli Mod',
-      scanDelayMin: 650,
+      scanDelayMin: 700,
       scanDelayMax: 1400,
       actionDelayMin: 2200,
       actionDelayMax: 4200,
@@ -52,8 +65,8 @@
     },
     fast: {
       label: '⚡ Hızlı Mod',
-      scanDelayMin: 250,
-      scanDelayMax: 650,
+      scanDelayMin: 350,
+      scanDelayMax: 750,
       actionDelayMin: 1100,
       actionDelayMax: 2200,
       batchSize: 25,
@@ -62,7 +75,7 @@
     ultra: {
       label: '🐢 Ultra Güvenli Mod',
       scanDelayMin: 1800,
-      scanDelayMax: 3500,
+      scanDelayMax: 3200,
       actionDelayMin: 6000,
       actionDelayMax: 11000,
       batchSize: 8,
@@ -70,15 +83,21 @@
     },
   };
 
+  const uiAbortController = new AbortController();
+  const uiSignal = uiAbortController.signal;
+
   // Uygulama Durumu (State)
   const state = {
     isRunning: false,
     isBulkRunning: false,
     abortController: null,
     bulkAbort: false,
+    lastRateLimitError: '',
     username: '',
     userId: '',
     lastScannedAt: null,
+    expectedFollowersCount: null,
+    expectedFollowingCount: null,
     followers: [],
     following: [],
     nonFollowers: [],
@@ -94,6 +113,7 @@
     userNotes: {},
     userTags: {},
     lang: 'tr',
+    renderLimit: 200,
     selectedIds: new Set(),
     lastClickedIndex: -1,
     activeTab: 'nonFollowers',
@@ -101,7 +121,7 @@
     filterType: 'all',
     sortBy: 'default',
     viewMode: 'grid',
-    speedMode: 'normal',
+    speedMode: 'safe',
     theme: 'system',
     autoCooldown: true,
     dailyLimitMax: 150,
@@ -114,6 +134,23 @@
     profileDetailsCache: new Map(),
   };
 
+  window.__igfcCleanup = () => {
+    uiAbortController.abort();
+    if (state.abortController) {
+      try {
+        state.abortController.abort();
+      } catch (_) {}
+      state.abortController = null;
+    }
+    state.avatarBlobCache.forEach((blobUrl) => {
+      try {
+        URL.revokeObjectURL(blobUrl);
+      } catch (_) {}
+    });
+    state.avatarBlobCache.clear();
+    document.getElementById(EXISTING_ID)?.remove();
+  };
+
   // ============================================================================
   // YARDIMCI FONKSİYONLAR & LOCALSTORAGE YÖNETİMİ
   // ============================================================================
@@ -121,8 +158,65 @@
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const randomBetween = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
+  function safeSetItem(key, valueStr) {
+    try {
+      localStorage.setItem(key, valueStr);
+      return true;
+    } catch (_) {
+      try {
+        localStorage.removeItem(STORAGE_SCAN_HISTORY);
+        if (state.scanHistory.length > 2) state.scanHistory.length = 2;
+        localStorage.setItem(key, valueStr);
+        return true;
+      } catch (__) {
+        return false;
+      }
+    }
+  }
+
+  async function safeParseJson(res) {
+    if (!res) return null;
+    try {
+      const txt = await res.text();
+      if (!txt || txt.trim().startsWith('<')) return null;
+      return JSON.parse(txt);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function copyTextSafe(text) {
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (_) {}
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function generateRankToken(userId) {
+    const rand = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+    return userId ? `${userId}_${rand}` : rand;
+  }
+
   function getRateLimitDelay(mode = 'scan') {
-    const cfg = SPEED_CONFIGS[state.speedMode] || SPEED_CONFIGS.normal;
+    const cfg = SPEED_CONFIGS[state.speedMode] || SPEED_CONFIGS.safe;
     if (mode === 'action') {
       return randomBetween(cfg.actionDelayMin, cfg.actionDelayMax);
     }
@@ -149,7 +243,7 @@
   function incrementTodayQuota() {
     try {
       const current = getTodayQuota() + 1;
-      localStorage.setItem(
+      safeSetItem(
         STORAGE_DAILY_QUOTA,
         JSON.stringify({ date: getTodayKey(), count: current })
       );
@@ -162,7 +256,7 @@
 
   function resetTodayQuota() {
     try {
-      localStorage.setItem(
+      safeSetItem(
         STORAGE_DAILY_QUOTA,
         JSON.stringify({ date: getTodayKey(), count: 0 })
       );
@@ -190,7 +284,13 @@
   function getAppCSRFToken() {
     return getCookie('csrftoken') || '';
   }
-  const getCsrfToken = getAppCSRFToken;
+
+  function getJazoest(csrfToken) {
+    let sum = 0;
+    const str = String(csrfToken || '');
+    for (let i = 0; i < str.length; i++) sum += str.charCodeAt(i);
+    return `2${sum}`;
+  }
 
   function getAppIGAppID() {
     return IG_APP_ID;
@@ -211,6 +311,7 @@
       'explore',
       'direct',
       'reels',
+      'reel',
       'stories',
       'accounts',
       'p',
@@ -218,8 +319,11 @@
       'challenge',
       'legal',
       'about',
+      'saved',
+      'archive',
+      'settings',
     ]);
-    if (pathParts.length === 1 && !reserved.has(pathParts[0])) {
+    if (pathParts.length >= 1 && !reserved.has(pathParts[0].toLowerCase())) {
       return pathParts[0];
     }
     return '';
@@ -237,13 +341,12 @@
     } catch (_) {}
     return state.whitelist;
   }
-  const loadWhitelist = getWhitelist;
 
   function saveWhitelist(customList) {
     try {
       if (customList instanceof Set) state.whitelist = customList;
       else if (Array.isArray(customList)) state.whitelist = new Set(customList.map(String));
-      localStorage.setItem(STORAGE_WHITELIST, JSON.stringify([...state.whitelist]));
+      safeSetItem(STORAGE_WHITELIST, JSON.stringify([...state.whitelist]));
     } catch (_) {}
   }
 
@@ -278,17 +381,15 @@
     } catch (_) {}
     return state.userNotes;
   }
-  const loadUserNotes = getNotes;
 
   function saveNotes(customNotes) {
     try {
       if (customNotes && typeof customNotes === 'object') {
         state.userNotes = customNotes;
       }
-      localStorage.setItem(STORAGE_USER_NOTES, JSON.stringify(state.userNotes));
+      safeSetItem(STORAGE_USER_NOTES, JSON.stringify(state.userNotes));
     } catch (_) {}
   }
-  const saveUserNotes = saveNotes;
 
   function getUserNote(userId) {
     return state.userNotes[String(userId)] || '';
@@ -315,7 +416,7 @@
 
   function saveUserTags() {
     try {
-      localStorage.setItem(STORAGE_USER_TAGS, JSON.stringify(state.userTags));
+      safeSetItem(STORAGE_USER_TAGS, JSON.stringify(state.userTags));
     } catch (_) {}
   }
 
@@ -344,7 +445,7 @@
 
   function saveFavorites() {
     try {
-      localStorage.setItem(STORAGE_FAVORITES, JSON.stringify([...state.favorites]));
+      safeSetItem(STORAGE_FAVORITES, JSON.stringify([...state.favorites]));
     } catch (_) {}
   }
 
@@ -394,7 +495,7 @@
     const health = computeAccountHealth();
     const lines = [
       '====================================================',
-      `INSTAGRAM FOLLOW CHECKER PRO - HESAP ANALİZ RAPORU`,
+      'INSTAGRAM FOLLOW CHECKER PRO - HESAP ANALİZ RAPORU',
       '====================================================',
       `Hesap: @${state.username || 'belirtilmedi'}`,
       `Rapor Tarihi: ${new Date().toLocaleString('tr-TR')}`,
@@ -418,7 +519,7 @@
       `--- SON TARAMADAN BERİ TAKİPTEN ÇIKANLAR (${state.lostFollowers.length}) ---`,
       ...state.lostFollowers.map((u, i) => `${i + 1}. @${u.username} (${u.full_name || '-'})`),
     ];
-    const blob = new Blob([lines.join(String.fromCharCode(10))], { type: 'text/plain;charset=utf-8;' });
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -432,8 +533,8 @@
     const files = Array.from(fileList || []);
     if (!files.length) return;
 
-    let importedFollowers = [];
-    let importedFollowing = [];
+    const importedFollowers = [];
+    const importedFollowing = [];
 
     const parseOfficialStructure = (parsed, fname) => {
       const extractArr = (arr, target) => {
@@ -476,12 +577,13 @@
         }
       })
     ).then(() => {
-      if (importedFollowers.length > 0) state.followers = importedFollowers;
-      if (importedFollowing.length > 0) state.following = importedFollowing;
       if (importedFollowers.length === 0 && importedFollowing.length === 0) {
         showToast('Seçilen JSON dosyasında takipçi veya takip edilen verisi bulunamadı.', 'warning');
         return;
       }
+      clearRateLimitError();
+      if (importedFollowers.length > 0) state.followers = importedFollowers;
+      if (importedFollowing.length > 0) state.following = importedFollowing;
       state.lastScannedAt = new Date().toISOString();
       if (!state.username) state.username = getDefaultUsername() || 'json_import';
       computeCategories();
@@ -517,10 +619,10 @@
         timestamp: new Date().toISOString(),
       };
       state.unfollowHistory.unshift(entry);
-      if (state.unfollowHistory.length > 500) {
-        state.unfollowHistory.length = 500;
+      if (state.unfollowHistory.length > 400) {
+        state.unfollowHistory.length = 400;
       }
-      localStorage.setItem(STORAGE_UNFOLLOW_LOG, JSON.stringify(state.unfollowHistory));
+      safeSetItem(STORAGE_UNFOLLOW_LOG, JSON.stringify(state.unfollowHistory));
     } catch (_) {}
   }
 
@@ -540,6 +642,13 @@
   function saveScanHistory(entry) {
     try {
       getScanHistory();
+      const compactUser = (u) => ({
+        id: String(u.id),
+        username: u.username,
+        full_name: u.full_name || '',
+        is_verified: Boolean(u.is_verified),
+        is_private: Boolean(u.is_private),
+      });
       const snapshotEntry = entry || {
         id: `${state.userId || state.username}_${Date.now()}`,
         username: state.username,
@@ -548,28 +657,14 @@
         followersCount: state.followers.length,
         followingCount: state.following.length,
         nonFollowersCount: state.nonFollowers.length,
-        followers: state.followers.map((u) => ({
-          id: String(u.id),
-          username: u.username,
-          full_name: u.full_name,
-          profile_pic_url: u.profile_pic_url,
-          is_verified: Boolean(u.is_verified),
-          is_private: Boolean(u.is_private),
-        })),
-        following: state.following.map((u) => ({
-          id: String(u.id),
-          username: u.username,
-          full_name: u.full_name,
-          profile_pic_url: u.profile_pic_url,
-          is_verified: Boolean(u.is_verified),
-          is_private: Boolean(u.is_private),
-        })),
+        followers: state.followers.map(compactUser),
+        following: state.following.map(compactUser),
       };
       state.scanHistory.unshift(snapshotEntry);
-      if (state.scanHistory.length > 15) {
-        state.scanHistory.length = 15;
+      if (state.scanHistory.length > 8) {
+        state.scanHistory.length = 8;
       }
-      localStorage.setItem(STORAGE_SCAN_HISTORY, JSON.stringify(state.scanHistory));
+      safeSetItem(STORAGE_SCAN_HISTORY, JSON.stringify(state.scanHistory));
     } catch (_) {}
   }
 
@@ -600,7 +695,7 @@
 
   function saveSettings() {
     try {
-      localStorage.setItem(
+      safeSetItem(
         STORAGE_SETTINGS,
         JSON.stringify({
           viewMode: state.viewMode,
@@ -644,7 +739,7 @@
         lostFollowers: state.lostFollowers,
         newFollowers: state.newFollowers,
       };
-      localStorage.setItem(STORAGE_LAST_SCAN, JSON.stringify(payload));
+      safeSetItem(STORAGE_LAST_SCAN, JSON.stringify(payload));
       updateCacheInfoUI();
     } catch (_) {}
   }
@@ -658,7 +753,6 @@
       addLog('Son tarama önbelleği (STORAGE_LAST_SCAN) temizlendi.', 'info');
     } catch (_) {}
   }
-  const clearLastScanCache = clearScanCache;
 
   function escapeHtml(str) {
     if (!str) return '';
@@ -674,8 +768,21 @@
   // ŞÜPHELİ / BOT HESAP PUANLAMA VE AVATAR YÜKLEYİCİ
   // ============================================================================
 
+  function isMissingAvatarUrl(picUrl, userObj = null) {
+    if (userObj && userObj.has_anonymous_profile_picture === true) return true;
+    const s = String(picUrl || '');
+    return (
+      !s ||
+      s.includes('44884218_345707102882519') ||
+      s.includes('464760996_1254146839119862') ||
+      s.includes('YW5vbnltb3VzX3Byb2ZpbGVfcGlj') ||
+      s.includes('default_profile') ||
+      s.includes('anonymous')
+    );
+  }
+
   function computeSuspicionInfo(user, isNonFollower = false) {
-    if (user.is_verified) {
+    if (!user || user.is_verified) {
       return { score: 0, isSuspicious: false, reasons: [] };
     }
     let score = 0;
@@ -683,26 +790,33 @@
     const picUrl = String(user.profile_pic_url || '');
     const uname = String(user.username || '');
     const fullName = String(user.full_name || '').trim();
+    const missingAvatar = isMissingAvatarUrl(picUrl, user);
 
-    if (
-      !picUrl ||
-      picUrl.includes('44884218_345707102882519') ||
-      picUrl.includes('default_profile') ||
-      picUrl.includes('anonymous')
-    ) {
-      score += 45;
+    if (missingAvatar) {
+      score += 50;
       reasons.push('Profil resmi yok');
     }
 
     const digits = uname.match(/\d/g);
     if (digits && digits.length >= 4) {
-      score += 25;
+      score += 30;
       reasons.push('Çok rakamlı kullanıcı adı');
+    } else if (digits && digits.length === 3) {
+      score += 15;
+      reasons.push('Rakamlı kullanıcı adı');
+    }
+
+    if (/\d{3,}$/.test(uname) || /(?:_.*_|\..*\.)/.test(uname)) {
+      score += 15;
+      reasons.push('Bot tipi kullanıcı adı dizilimi');
     }
 
     if (!fullName) {
-      score += 20;
+      score += 15;
       reasons.push('İsim alanı boş');
+    } else if (fullName.toLowerCase() === uname.toLowerCase()) {
+      score += 10;
+      reasons.push('İsim ile kullanıcı adı aynı');
     }
 
     if (isNonFollower) {
@@ -710,16 +824,17 @@
       reasons.push('Geri takip etmiyor');
     }
 
+    if (user.is_private && missingAvatar && !fullName) {
+      score += 15;
+      reasons.push('Gizli ve profil resmi/ismi yok');
+    }
+
     const finalScore = Math.min(100, score);
     return {
       score: finalScore,
-      isSuspicious: finalScore >= 45,
+      isSuspicious: finalScore >= 50,
       reasons,
     };
-  }
-
-  function calculateSuspiciousScore(user) {
-    return computeSuspicionInfo(user, true).score;
   }
 
   function generateSvgAvatar(username, fullName = '') {
@@ -737,11 +852,38 @@
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
   }
 
+  function fetchImageBlobViaGM(url) {
+    return new Promise((resolve, reject) => {
+      const gmXhr =
+        typeof GM_xmlhttpRequest === 'function'
+          ? GM_xmlhttpRequest
+          : typeof GM !== 'undefined' && typeof GM.xmlHttpRequest === 'function'
+          ? GM.xmlHttpRequest
+          : null;
+      if (!gmXhr) return reject(new Error('no_gm'));
+      gmXhr({
+        method: 'GET',
+        url,
+        responseType: 'blob',
+        timeout: 8000,
+        onload: (res) => {
+          if (res.status >= 200 && res.status < 300 && res.response) {
+            resolve(URL.createObjectURL(res.response));
+          } else {
+            reject(new Error(`HTTP ${res.status}`));
+          }
+        },
+        onerror: () => reject(new Error('gm_err')),
+        ontimeout: () => reject(new Error('gm_timeout')),
+      });
+    });
+  }
+
   function hydrateAvatarImage(imgEl, user) {
     if (!imgEl || !user) return;
     const fallbackSvg = generateSvgAvatar(user.username, user.full_name);
-    const picUrl = user.profile_pic_url;
-    if (!picUrl) {
+    const picUrl = String(user.profile_pic_url_hd || user.profile_pic_url || '').trim();
+    if (!picUrl || isMissingAvatarUrl(picUrl, user)) {
       imgEl.src = fallbackSvg;
       return;
     }
@@ -750,18 +892,40 @@
       return;
     }
 
+    const hasGm =
+      typeof GM_xmlhttpRequest === 'function' ||
+      (typeof GM !== 'undefined' && typeof GM.xmlHttpRequest === 'function');
+
+    if (hasGm) {
+      imgEl.src = fallbackSvg;
+      fetchImageBlobViaGM(picUrl)
+        .then((blobUrl) => {
+          state.avatarBlobCache.set(picUrl, blobUrl);
+          imgEl.src = blobUrl;
+        })
+        .catch(() => {
+          imgEl.crossOrigin = 'anonymous';
+          imgEl.referrerPolicy = 'no-referrer';
+          imgEl.src = picUrl;
+        });
+      return;
+    }
+
+    // Instagram COEP (require-corp) politikası için crossOrigin='anonymous' zorunludur
     imgEl.crossOrigin = 'anonymous';
     imgEl.referrerPolicy = 'no-referrer';
     imgEl.onerror = async () => {
       imgEl.onerror = null;
       try {
         const res = await fetch(picUrl, { mode: 'cors', credentials: 'omit' });
-        if (!res.ok) throw new Error('Avatar fetch failed');
+        if (!res.ok) throw new Error('img_fetch_fail');
         const blob = await res.blob();
         const blobUrl = URL.createObjectURL(blob);
         state.avatarBlobCache.set(picUrl, blobUrl);
+        imgEl.removeAttribute('crossorigin');
         imgEl.src = blobUrl;
       } catch (_) {
+        imgEl.removeAttribute('crossorigin');
         imgEl.src = fallbackSvg;
       }
     };
@@ -779,9 +943,9 @@
 
     const escapedId = viewerId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const patterns = [
-      new RegExp(`"id"\\s*:\\s*"${escapedId}"[^}]{0,400}?"username"\\s*:\\s*"([^"]+)"`),
-      new RegExp(`"username"\\s*:\\s*"([^"]+)"[^}]{0,400}?"id"\\s*:\\s*"${escapedId}"`),
-      new RegExp(`"pk"\\s*:\\s*"${escapedId}"[^}]{0,400}?"username"\\s*:\\s*"([^"]+)"`),
+      new RegExp(`"id"\\s*:\\s*"${escapedId}"[^{}]{0,300}?"username"\\s*:\\s*"([a-zA-Z0-9._]{1,30})"`),
+      new RegExp(`"username"\\s*:\\s*"([a-zA-Z0-9._]{1,30})"[^{}]{0,300}?"id"\\s*:\\s*"${escapedId}"`),
+      new RegExp(`"pk"\\s*:\\s*"${escapedId}"[^{}]{0,300}?"username"\\s*:\\s*"([a-zA-Z0-9._]{1,30})"`),
     ];
 
     const scripts = Array.from(document.querySelectorAll('script'));
@@ -795,11 +959,14 @@
         }
       }
     }
-    return { id: viewerId, username: getDefaultUsername() };
+    return { id: viewerId, username: '' };
   }
 
-  function findStrictUserInJson(obj, targetUsername) {
-    if (!obj || typeof obj !== 'object') return null;
+  function findStrictUserInJson(obj, targetUsername, depth = 0, seen = new WeakSet()) {
+    if (!obj || typeof obj !== 'object' || depth > 14) return null;
+    if (seen.has(obj)) return null;
+    seen.add(obj);
+
     if (
       typeof obj.username === 'string' &&
       obj.username.toLowerCase() === targetUsername.toLowerCase() &&
@@ -820,7 +987,7 @@
       };
     }
     for (const key of Object.keys(obj)) {
-      const found = findStrictUserInJson(obj[key], targetUsername);
+      const found = findStrictUserInJson(obj[key], targetUsername, depth + 1, seen);
       if (found) return found;
     }
     return null;
@@ -863,27 +1030,77 @@
     return null;
   }
 
+  function parseFormattedCount(rawStr) {
+    if (rawStr == null) return null;
+    const s = String(rawStr).trim();
+    if (!s || /[kmbKMB]|bin|milyon/i.test(s)) return null;
+    const digits = s.replace(/[.,\s\u00a0]/g, '');
+    return /^\d+$/.test(digits) ? Number(digits) : null;
+  }
+
+  function extractVisibleCountsFromDOM(targetUsername) {
+    try {
+      if (!targetUsername) return null;
+      const lowerU = targetUsername.toLowerCase();
+      if ((getDefaultUsername() || '').toLowerCase() !== lowerU) return null;
+      let followerCount = null;
+      let followingCount = null;
+      const links = Array.from(document.querySelectorAll('header a[href], main a[href]'));
+      for (const a of links) {
+        if (a.closest(`#${EXISTING_ID}`)) continue;
+        const href = (a.getAttribute('href') || '').split('?')[0].replace(/\/+$/, '').toLowerCase();
+        if (href.endsWith('/followers')) {
+          const titled = a.querySelector('[title]') || (a.hasAttribute('title') ? a : null);
+          const parsed = parseFormattedCount(titled ? titled.getAttribute('title') : (a.textContent || '').match(/([\d.,]+)/)?.[1]);
+          if (parsed != null) followerCount = parsed;
+        } else if (href.endsWith('/following')) {
+          const titled = a.querySelector('[title]') || (a.hasAttribute('title') ? a : null);
+          const parsed = parseFormattedCount(titled ? titled.getAttribute('title') : (a.textContent || '').match(/([\d.,]+)/)?.[1]);
+          if (parsed != null) followingCount = parsed;
+        }
+      }
+      return followerCount != null || followingCount != null ? { followerCount, followingCount } : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ============================================================================
-  // INSTAGRAM REST & GRAPHQL API MOTORU (429 KORUMALI)
+  // INSTAGRAM REST & GRAPHQL API MOTORU (ANINDA 429 DURDURMA KORUMALI)
   // ============================================================================
 
-  async function fetchWithRetry(url, options = {}, maxRetries = 4) {
-    const headers = getAppHeaders(options.headers || {});
+  async function fetchWithRetry(url, options = {}, maxRetries = 2) {
+    const useScanSignal = Boolean(options._ignoreScanAbort !== true && state.isRunning && state.abortController);
+    const cleanOptions = { ...options };
+    delete cleanOptions._ignoreScanAbort;
+    const headers = getAppHeaders(cleanOptions.headers || {});
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (useScanSignal && state.abortController?.signal.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
       try {
         const res = await fetch(url, {
-          ...options,
+          ...cleanOptions,
           headers,
           credentials: 'include',
-          signal: state.abortController ? state.abortController.signal : undefined,
+          signal: useScanSignal && state.abortController ? state.abortController.signal : undefined,
         });
 
-        if (res.status === 429 || res.status >= 500) {
+        // HTTP 429 geldiğinde beklemeden anında durdur ve hata göster
+        if (res.status === 429) {
+          notifyRateLimitError(url);
+          if (useScanSignal) {
+            throw new DOMException('HTTP 429 Rate Limit', 'AbortError');
+          }
+          return res;
+        }
+
+        if (res.status >= 500) {
           if (attempt >= maxRetries) return res;
-          const waitSec = Math.pow(2, attempt + 1) * 3 + randomBetween(1, 4);
-          addLog(`⚠️ Hız sınırı (${res.status}). ${waitSec} sn bekleniyor (Deneme ${attempt + 1}/${maxRetries})...`, 'warn');
-          updateStatus(`API hız sınırı algılandı, ${waitSec} sn bekleniyor...`);
+          const waitSec = (attempt + 1) * 3 + randomBetween(1, 3);
+          addLog(`⚠️ Sunucu hatası (${res.status}). ${waitSec} sn bekleniyor...`, 'warn');
           await sleep(waitSec * 1000);
           continue;
         }
@@ -891,12 +1108,11 @@
       } catch (err) {
         if (err.name === 'AbortError') throw err;
         if (attempt >= maxRetries) throw err;
-        await sleep(2000 * (attempt + 1));
+        await sleep(1500 * (attempt + 1));
       }
     }
   }
 
-  // Kullanıcı Profil Bilgisi Çekme (429 Rate-Limit Korumalı: Önce DOM/Cookie/Önbellek -> GraphQL -> HTML -> REST)
   async function resolveUserProfile(usernameInput, options = {}) {
     const cleanUsername = String(usernameInput || '').trim().replace(/^@/, '');
     const cookieUserId = getCookie('ds_user_id');
@@ -934,7 +1150,7 @@
       }
     }
 
-    // 2. ADIM (0 Ağ İsteği): Kendi Hesabımız veya Önbellekteki Son Taranan Hesap Kontrolü
+    // 2. ADIM (0 Ağ İsteği): Kendi Hesabımız veya Önbellekteki Hesap
     if (!options.forceLiveBio) {
       if (viewer && viewer.id && viewer.username && viewer.username.toLowerCase() === lower) {
         const selfProfile = {
@@ -979,9 +1195,9 @@
         __relay_internal__pv__PolarisFeedShareMenurelayprovider: false,
       };
       const gqlUrl = `https://www.instagram.com/graphql/query/?doc_id=${TIMELINE_DOC_ID}&variables=${encodeURIComponent(JSON.stringify(variables))}`;
-      const res = await fetchWithRetry(gqlUrl, {}, 1);
+      const res = await fetchWithRetry(gqlUrl, { _ignoreScanAbort: Boolean(options.forceLiveBio) }, 0);
       if (res && res.ok) {
-        const json = await res.json();
+        const json = await safeParseJson(res);
         const edges = json?.data?.xdt_api__v1__feed__user_timeline_graphql_connection?.edges;
         const owner = edges?.[0]?.node?.user || edges?.[0]?.node?.owner;
         if (owner && (owner.pk || owner.id)) {
@@ -1006,11 +1222,11 @@
       if (e.name === 'AbortError') throw e;
     }
 
-    // 4. ADIM: Profil HTML Sayfasından JSON/ID Ayıklama (429 üretmez)
+    // 4. ADIM: Profil HTML Sayfasından JSON/ID Ayıklama
     try {
       const pageRes = await fetch(`https://www.instagram.com/${encodeURIComponent(cleanUsername)}/`, {
         credentials: 'include',
-        signal: state.abortController ? state.abortController.signal : undefined,
+        signal: !options.forceLiveBio && state.isRunning && state.abortController ? state.abortController.signal : undefined,
       });
       if (pageRes && pageRes.ok) {
         const htmlText = await pageRes.text();
@@ -1052,12 +1268,12 @@
       if (e.name === 'AbortError') throw e;
     }
 
-    // 5. ADIM: Web Profile Info REST Uç Noktası (maxRetries = 0: 429 dönerse beklemez)
+    // 5. ADIM: Web Profile Info REST Uç Noktası
     try {
       const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(cleanUsername)}`;
-      const res = await fetchWithRetry(url, {}, 0);
+      const res = await fetchWithRetry(url, { _ignoreScanAbort: Boolean(options.forceLiveBio) }, 0);
       if (res && res.ok) {
-        const json = await res.json();
+        const json = await safeParseJson(res);
         const u = json?.data?.user;
         if (u && (u.id || u.pk)) {
           const profile = {
@@ -1081,25 +1297,7 @@
       if (e.name === 'AbortError') throw e;
     }
 
-    // 6. ADIM: Son Çare Olarak Aktif Oturum Çerezi (ds_user_id)
-    if (cookieUserId) {
-      const fallbackProfile = {
-        id: String(cookieUserId),
-        username: cleanUsername || viewer?.username || 'aktif_hesap',
-        fullName: '',
-        profilePicUrl: '',
-        followerCount: null,
-        followingCount: null,
-        mediaCount: null,
-        isVerified: false,
-        isPrivate: false,
-        biography: '',
-        externalUrl: '',
-      };
-      return fallbackProfile;
-    }
-
-    throw new Error(`"@${cleanUsername}" profili çözümlenemedi. Lütfen "⚡ Kendi Hesabımı Tara" butonunu kullanın.`);
+    throw new Error(`"@${cleanUsername}" profili çözümlenemedi. Kullanıcı adını kontrol edin veya "⚡ Kendi Hesabımı Tara" butonunu kullanın.`);
   }
 
   async function fetchUserFullDetails(userId, usernameHint = '') {
@@ -1109,63 +1307,119 @@
     return null;
   }
 
-  // 1. YÖNTEM: REST API ile Takipçi / Takip Edilen Listesi Çekme
-  async function fetchViaRestApi(userId, type, expectedTotal, progressStart, progressEnd) {
-    const results = [];
-    const seen = new Set();
+  function addUserToMap(raw, sharedMap, seenUsernames) {
+    if (!raw || typeof raw !== 'object') return false;
+    const uid = String(raw.pk || raw.id || '').trim();
+    const uname = String(raw.username || '').trim();
+    const unameLow = uname.toLowerCase();
+    if (!uid || !uname) return false;
+    if (sharedMap.has(uid) || seenUsernames.has(unameLow)) return false;
+    seenUsernames.add(unameLow);
+    sharedMap.set(uid, {
+      id: uid,
+      username: uname,
+      full_name: raw.full_name || '',
+      profile_pic_url: raw.profile_pic_url_hd || raw.profile_pic_url || '',
+      has_anonymous_profile_picture: Boolean(raw.has_anonymous_profile_picture),
+      is_verified: Boolean(raw.is_verified),
+      is_private: Boolean(raw.is_private),
+      followOrderIndex: sharedMap.size,
+    });
+    return true;
+  }
+
+  // 1. YÖNTEM: REST API ile Takipçi / Takip Edilen Listesi Çekme (Canlı Güncellemeli + Çift Yönlü Sıralama)
+  async function fetchViaRestApi(userId, type, expectedTotal, progressStart, progressEnd, sharedMap, seenUsernames, onPageUpdate, passOpts = {}) {
+    const visitedCursors = new Set();
     let maxId = '';
     let page = 0;
+    let emptyPages = 0;
+    let consecutiveZeroNew = 0;
+    const pageSize = passOpts.count || (type === 'followers' ? 24 : 24);
+    const useSurface = passOpts.useSurface ?? false;
+    const orderParam = passOpts.order ? `&order=${encodeURIComponent(passOpts.order)}` : '';
+    const isSecondaryPass = Boolean(passOpts.isSecondary);
 
     while (true) {
       if (state.abortController?.signal.aborted) throw new DOMException('Aborted', 'AbortError');
-      const url = `https://www.instagram.com/api/v1/friendships/${encodeURIComponent(userId)}/${type}/?count=${PAGE_SIZE}${maxId ? `&max_id=${encodeURIComponent(maxId)}` : ''}`;
-      const res = await fetchWithRetry(url);
+      if (typeof expectedTotal === 'number' && expectedTotal > 0 && sharedMap.size >= expectedTotal) break;
+
+      const surfaceParam = useSurface ? '&search_surface=follow_list_page' : '';
+      const url = `https://www.instagram.com/api/v1/friendships/${encodeURIComponent(userId)}/${type}/?count=${pageSize}${surfaceParam}${orderParam}${maxId ? `&max_id=${encodeURIComponent(maxId)}` : ''}`;
+      const res = await fetchWithRetry(url, {}, 1);
       if (!res || !res.ok) {
         throw new Error(`REST API ${type} hatası (${res?.status || 'Ağ'})`);
       }
 
-      const data = await res.json();
+      const data = await safeParseJson(res);
+      if (!data || (data.status && data.status !== 'ok')) {
+        throw new Error(`REST API ${type} geçersiz yanıt döndürdü (${data?.message || 'oturum doğrulaması gerekebilir'})`);
+      }
+
       const users = Array.isArray(data?.users) ? data.users : [];
+      let addedNow = 0;
       for (const u of users) {
-        const uid = String(u.pk || u.id || '');
-        if (!uid || seen.has(uid)) continue;
-        seen.add(uid);
-        results.push({
-          id: uid,
-          username: u.username || '',
-          full_name: u.full_name || '',
-          profile_pic_url: u.profile_pic_url_hd || u.profile_pic_url || '',
-          is_verified: Boolean(u.is_verified),
-          is_private: Boolean(u.is_private),
-          followOrderIndex: results.length,
-        });
+        if (addUserToMap(u, sharedMap, seenUsernames)) addedNow++;
+      }
+
+      if (users.length === 0) {
+        emptyPages++;
+        if (emptyPages >= 2) break;
+      } else {
+        emptyPages = 0;
+        if (isSecondaryPass) {
+          if (addedNow === 0) {
+            consecutiveZeroNew++;
+            // İkincil geçişte (ör. en eskiden) mevcut listeyle tamamen örtüşmeye başladıysa gereksiz istek atma
+            if (consecutiveZeroNew >= 6) break;
+          } else {
+            consecutiveZeroNew = 0;
+          }
+        }
       }
 
       page++;
-      const totalEst = expectedTotal && expectedTotal > 0 ? expectedTotal : Math.max(results.length + 50, 100);
-      const ratio = Math.min(1, results.length / totalEst);
+      const totalEst = expectedTotal && expectedTotal > 0 ? expectedTotal : Math.max(sharedMap.size + pageSize, 100);
+      const ratio = Math.min(1, sharedMap.size / totalEst);
       const currentPct = Math.round(progressStart + ratio * (progressEnd - progressStart));
       updateProgress(currentPct);
       updateStatus(
-        `${type === 'followers' ? 'Takipçiler' : 'Takip Edilenler'} çekiliyor: ${results.length}${expectedTotal ? ` / ${expectedTotal}` : ''} (Sayfa ${page})`
+        `${type === 'followers' ? 'Takipçiler' : 'Takip Edilenler'} çekiliyor: ${sharedMap.size}${expectedTotal ? ` / ${expectedTotal}` : ''} (Sayfa ${page})`
       );
 
-      if (!data?.next_max_id) break;
-      maxId = String(data.next_max_id);
+      if (typeof onPageUpdate === 'function') {
+        onPageUpdate(Array.from(sharedMap.values()));
+      }
+
+      let nextCursor = data?.next_max_id != null && String(data.next_max_id) !== '' ? String(data.next_max_id) : '';
+      if (!nextCursor && data?.big_list === true && users.length > 0 && (maxId === '' || /^\d+$/.test(maxId))) {
+        const nextNum = (maxId === '' ? 0 : Number(maxId)) + users.length;
+        nextCursor = String(nextNum);
+      }
+
+      if (!nextCursor || visitedCursors.has(nextCursor) || page >= 500) break;
+      visitedCursors.add(nextCursor);
+      maxId = nextCursor;
       await sleep(getRateLimitDelay('scan'));
     }
 
-    return results;
+    return Array.from(sharedMap.values());
   }
 
-  // 2. YÖNTEM: GraphQL ile Takipçi / Takip Edilen Listesi Çekme
-  async function fetchViaGraphQL(userId, type, expectedTotal, progressStart, progressEnd) {
-    const results = [];
-    const seen = new Set();
+  // 2. YÖNTEM: GraphQL ile Takipçi / Takip Edilen Listesi Çekme (Canlı Güncellemeli)
+  async function fetchViaGraphQL(userId, type, expectedTotal, progressStart, progressEnd, sharedMap, seenUsernames, onPageUpdate, useAltHash = false) {
+    const visitedCursors = new Set();
     let afterCursor = null;
     let hasNextPage = true;
     let page = 0;
-    const queryHash = type === 'followers' ? FOLLOWERS_QUERY_HASH : FOLLOWING_QUERY_HASH;
+    const queryHash =
+      type === 'followers'
+        ? useAltHash
+          ? FOLLOWERS_QUERY_HASH_ALT
+          : FOLLOWERS_QUERY_HASH
+        : useAltHash
+        ? FOLLOWING_QUERY_HASH_ALT
+        : FOLLOWING_QUERY_HASH;
     const edgeKey = type === 'followers' ? 'edge_followed_by' : 'edge_follow';
 
     while (hasNextPage) {
@@ -1174,81 +1428,175 @@
         id: String(userId),
         include_reel: false,
         fetch_mutual: false,
-        first: PAGE_SIZE,
+        first: GQL_PAGE_SIZE,
         after: afterCursor,
       };
       const url = `https://www.instagram.com/graphql/query/?query_hash=${queryHash}&variables=${encodeURIComponent(JSON.stringify(variables))}`;
-      const res = await fetchWithRetry(url);
+      const res = await fetchWithRetry(url, {}, 1);
       if (!res || !res.ok) {
         throw new Error(`GraphQL ${type} hatası (${res?.status || 'Ağ'})`);
       }
 
-      const json = await res.json();
+      const json = await safeParseJson(res);
       const connection = json?.data?.user?.[edgeKey];
       if (!connection) break;
 
+      if (typeof connection.count === 'number' && connection.count > 0) {
+        expectedTotal = connection.count;
+        if (type === 'followers') state.expectedFollowersCount = connection.count;
+        if (type === 'following') state.expectedFollowingCount = connection.count;
+      }
+
       const edges = Array.isArray(connection.edges) ? connection.edges : [];
       for (const edge of edges) {
-        const node = edge?.node;
-        if (!node) continue;
-        const uid = String(node.id || node.pk || '');
-        if (!uid || seen.has(uid)) continue;
-        seen.add(uid);
-        results.push({
-          id: uid,
-          username: node.username || '',
-          full_name: node.full_name || '',
-          profile_pic_url: node.profile_pic_url || '',
-          is_verified: Boolean(node.is_verified),
-          is_private: Boolean(node.is_private),
-          followOrderIndex: results.length,
-        });
+        if (edge?.node) addUserToMap(edge.node, sharedMap, seenUsernames);
       }
 
       page++;
-      const totalEst = connection.count || expectedTotal || Math.max(results.length + 50, 100);
-      const ratio = Math.min(1, results.length / totalEst);
+      const totalEst = connection.count || expectedTotal || Math.max(sharedMap.size + GQL_PAGE_SIZE, 100);
+      const ratio = Math.min(1, sharedMap.size / totalEst);
       const currentPct = Math.round(progressStart + ratio * (progressEnd - progressStart));
       updateProgress(currentPct);
       updateStatus(
-        `${type === 'followers' ? 'Takipçiler (GQL)' : 'Takip Edilenler (GQL)'}: ${results.length} / ${totalEst} (Sayfa ${page})`
+        `${type === 'followers' ? 'Takipçiler (GQL)' : 'Takip Edilenler (GQL)'}: ${sharedMap.size} / ${totalEst} (Sayfa ${page})`
       );
 
+      if (typeof onPageUpdate === 'function') {
+        onPageUpdate(Array.from(sharedMap.values()));
+      }
+
       hasNextPage = Boolean(connection.page_info?.has_next_page);
-      afterCursor = connection.page_info?.end_cursor || null;
-      if (!afterCursor) break;
+      const nextCursor = connection.page_info?.end_cursor || null;
+      if (!nextCursor || visitedCursors.has(nextCursor) || page >= 500) break;
+      visitedCursors.add(nextCursor);
+      afterCursor = nextCursor;
       await sleep(getRateLimitDelay('scan'));
     }
 
-    return results;
+    return Array.from(sharedMap.values());
   }
 
-  // Akıllı Veri Çekme Motoru (REST -> GraphQL Fallback)
-  async function fetchFriendshipList(targetUserId, listType, countHint, startProgress, endProgress) {
+  // Akıllı Veri Çekme Motoru (REST Geçiş 1 -> Eksikse REST Geçiş 2 -> GraphQL Tamamlama)
+  async function fetchFriendshipList(targetUserId, listType, countHint, startProgress, endProgress, onPageUpdate) {
+    const sharedMap = new Map();
+    const seenUsernames = new Set();
+
+    const getExp = () =>
+      listType === 'followers'
+        ? state.expectedFollowersCount ?? countHint
+        : state.expectedFollowingCount ?? countHint;
+
+    const isMissing = () => {
+      const exp = getExp();
+      if (exp === 0) return false;
+      if (sharedMap.size === 0) return true;
+      if (typeof exp === 'number' && exp > 0) return sharedMap.size < exp;
+      return true;
+    };
+
     try {
-      const restList = await fetchViaRestApi(targetUserId, listType, countHint, startProgress, endProgress);
-      if (restList.length > 0 || countHint === 0) {
-        return restList;
+      // 1. Geçiş: Standart Web REST (takip edilenlerde en yeni sıradan başlar)
+      await fetchViaRestApi(
+        targetUserId,
+        listType,
+        getExp(),
+        startProgress,
+        endProgress,
+        sharedMap,
+        seenUsernames,
+        onPageUpdate,
+        {
+          count: 24,
+          useSurface: listType === 'followers',
+          order: listType === 'following' ? 'date_followed_latest' : '',
+        }
+      );
+
+      // 2. Geçiş: Eksik kaldıysa takip edilenlerde TERS yönden (en eskiden) çekerek alt kısmı tamamla
+      const exp1 = getExp();
+      if (!state.lastRateLimitError && (exp1 == null || sharedMap.size < exp1)) {
+        if (listType === 'following') {
+          addLog(`ℹ️ Takip Edilenler ters sıradan (en eskiden) tamamlanıyor (${sharedMap.size}/${exp1 ?? '?'})...`, 'info');
+          await fetchViaRestApi(
+            targetUserId,
+            listType,
+            exp1,
+            startProgress,
+            endProgress,
+            sharedMap,
+            seenUsernames,
+            onPageUpdate,
+            { count: 24, useSurface: false, order: 'date_followed_earliest', isSecondary: true }
+          );
+          // Hâlâ eksikse varsayılan (sıralamasız) geçişi de dene
+          if (!state.lastRateLimitError && typeof exp1 === 'number' && sharedMap.size < exp1) {
+            await fetchViaRestApi(
+              targetUserId,
+              listType,
+              exp1,
+              startProgress,
+              endProgress,
+              sharedMap,
+              seenUsernames,
+              onPageUpdate,
+              { count: 12, useSurface: true, order: '', isSecondary: true }
+            );
+          }
+        } else if (typeof exp1 === 'number' && sharedMap.size < exp1) {
+          addLog(`ℹ️ Takipçiler alternatif REST geçişiyle tamamlanıyor (${sharedMap.size}/${exp1})...`, 'info');
+          await fetchViaRestApi(
+            targetUserId,
+            listType,
+            exp1,
+            startProgress,
+            endProgress,
+            sharedMap,
+            seenUsernames,
+            onPageUpdate,
+            { count: 12, useSurface: false, isSecondary: true }
+          );
+        }
       }
     } catch (err) {
       if (err.name === 'AbortError') throw err;
       addLog(`REST API (${listType}) yedek yönteme (GraphQL) geçiyor: ${err.message}`, 'warn');
     }
-    return fetchViaGraphQL(targetUserId, listType, countHint, startProgress, endProgress);
+
+    // 3. Geçiş: Hâlâ eksik varsa veya toplam sayı bilinmiyorsa çift hash destekli GraphQL ile tamamla
+    if (!state.lastRateLimitError && isMissing()) {
+      const beforeGql = sharedMap.size;
+      const expNow = getExp();
+      if (beforeGql > 0) {
+        addLog(`ℹ️ GraphQL (${listType}) ile eksikler tamamlanıyor (${beforeGql}/${expNow ?? '?'})...`, 'info');
+      }
+      try {
+        await fetchViaGraphQL(targetUserId, listType, expNow, startProgress, endProgress, sharedMap, seenUsernames, onPageUpdate, false);
+        if (!state.lastRateLimitError && isMissing()) {
+          await fetchViaGraphQL(targetUserId, listType, getExp(), startProgress, endProgress, sharedMap, seenUsernames, onPageUpdate, true);
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') throw err;
+        if (sharedMap.size === 0) throw err;
+      }
+    }
+
+    return Array.from(sharedMap.values());
   }
 
-  // Etkileşim API Fonksiyonları
+  // Etkileşim API Fonksiyonları (_ignoreScanAbort: true ile Durdur sonrası da çalışır)
   async function unfollowUser(userId) {
     const url = `https://www.instagram.com/api/v1/friendships/destroy/${encodeURIComponent(userId)}/`;
     const res = await fetchWithRetry(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    });
+      body: `user_id=${encodeURIComponent(userId)}`,
+      _ignoreScanAbort: true,
+    }, 1);
     if (!res || !res.ok) {
       throw new Error(`HTTP ${res?.status || 'Hata'}`);
     }
     incrementTodayQuota();
-    return res.json();
+    return (await safeParseJson(res)) || { status: 'ok' };
   }
 
   async function followUser(userId) {
@@ -1256,12 +1604,14 @@
     const res = await fetchWithRetry(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    });
+      body: `user_id=${encodeURIComponent(userId)}`,
+      _ignoreScanAbort: true,
+    }, 1);
     if (!res || !res.ok) {
       throw new Error(`HTTP ${res?.status || 'Hata'}`);
     }
     incrementTodayQuota();
-    return res.json();
+    return (await safeParseJson(res)) || { status: 'ok' };
   }
 
   async function removeFollowerUser(userId) {
@@ -1269,16 +1619,18 @@
     const res = await fetchWithRetry(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    });
+      body: `user_id=${encodeURIComponent(userId)}`,
+      _ignoreScanAbort: true,
+    }, 1);
     if (!res || !res.ok) {
       throw new Error(`HTTP ${res?.status || 'Hata'}`);
     }
     incrementTodayQuota();
-    return res.json();
+    return (await safeParseJson(res)) || { status: 'ok' };
   }
 
   // ============================================================================
-  // SON TAKİP KİŞİSİNİ ÇIKART MODÜLÜ (UNFOLLOW LAST FOLLOWED / REMOVE LAST FOLLOWER)
+  // SON TAKİP KİŞİSİNİ ÇIKART MODÜLÜ
   // ============================================================================
 
   function getLastFollowedPerson() {
@@ -1488,7 +1840,7 @@
       btn.disabled = true;
       btn.textContent = '⏳ Çıkarılıyor...';
       await unfollowLastFollowedPerson();
-      openLastFollowModal();
+      if (document.body.contains(overlay)) openLastFollowModal();
     });
 
     overlay.querySelector('#igfc-modal-remove-last-follower-btn')?.addEventListener('click', async (e) => {
@@ -1496,7 +1848,7 @@
       btn.disabled = true;
       btn.textContent = '⏳ Çıkarılıyor...';
       await removeLastFollowerPerson();
-      openLastFollowModal();
+      if (document.body.contains(overlay)) openLastFollowModal();
     });
 
     overlay.querySelectorAll('.igfc-recent-act-btn').forEach((btn) => {
@@ -1512,7 +1864,7 @@
           const target = state.followers.find((u) => String(u.id) === String(uid));
           if (target) await removeLastFollowerPerson(target);
         }
-        openLastFollowModal();
+        if (document.body.contains(overlay)) openLastFollowModal();
       });
     });
   }
@@ -1543,13 +1895,13 @@
         followers: currentFollowers.map((u) => ({
           id: String(u.id),
           username: u.username,
-          full_name: u.full_name,
-          profile_pic_url: u.profile_pic_url,
+          full_name: u.full_name || '',
+          profile_pic_url: u.profile_pic_url || '',
           is_verified: Boolean(u.is_verified),
           is_private: Boolean(u.is_private),
         })),
       };
-      localStorage.setItem(STORAGE_SNAPSHOT, JSON.stringify(allSnapshots));
+      safeSetItem(STORAGE_SNAPSHOT, JSON.stringify(allSnapshots));
     } catch (_) {}
   }
 
@@ -1570,7 +1922,6 @@
     const followsYou = followerIds.has(uid);
     const youFollow = followingIds.has(uid);
     const isProtected = isWhitelisted(uid);
-    const isFav = isFavorite(uid);
 
     let relationLabel = 'Takipleşmiyorsunuz';
     if (followsYou && youFollow) relationLabel = '🤝 Karşılıklı Takipleşiyorsunuz';
@@ -1761,18 +2112,13 @@
     overlay.innerHTML = `
       <div id="igfc-changelog-modal" class="igfc-submodal-card">
         <div class="igfc-submodal-header">
-          <h3>🚀 Sürüm Geçmişi (v10.2 Pro Ultimate)</h3>
+          <h3>🚀 Sürüm Geçmişi (v10.7 Pro Ultimate)</h3>
           <button id="igfc-changelog-close-btn" class="igfc-win-btn close" title="Kapat">✕</button>
         </div>
         <div class="igfc-submodal-body">
           <ul class="igfc-changelog-list">
-            <li><strong>v10.2 Pro:</strong> 429 Too Many Requests hız sınırı koruması (0 ağ isteğiyle kendi hesabını çözümleme), <em>Son Takip Kişisini Çıkart</em> sihirbazı (son 1 ve son 5 takip/takipçi), Gelişmiş Karşılaştırma Modalı ve Ayarlar Modalı tamamlandı.</li>
-            <li><strong>v10 Pro:</strong> Kusursuz Responsive Header (<code>flex-wrap</code>), Modern Segmented Control sekmeler, Segmented Pill Toolbar ve Otomatik Sistem Teması (<code>system</code>) eklendi.</li>
-            <li><strong>v9 Pro:</strong> Günlük İşlem Kotası sayacı (<code>150/gün</code>) ve Avatar / Profil önbellekleme (<code>Map</code>) eklendi.</li>
-            <li><strong>v8:</strong> Şüpheli / Bot hesap analizi sekmesi, özel kullanıcı notları (<code>STORAGE_USER_NOTES</code>) ve işlem geçmişi kaydı eklendi.</li>
-            <li><strong>v7:</strong> Geçmiş tarama karşılaştırma motoru (<code>lostFollowers</code> &amp; <code>newFollowers</code>), Shift ile çoklu aralık seçimi ve gelişmiş filtreleme eklendi.</li>
-            <li><strong>v6:</strong> Güvenli / Dengeli / Hızlı / Ultra işlem modları ve Anti-Ban otomatik soğuma molası eklendi.</li>
-            <li><strong>v5:</strong> CORS uyumlu <code>fetch(blob)</code> profil resmi yükleyici, SVG yedek avatar ve CSV/JSON dışa aktarma eklendi.</li>
+            <li><strong>v10.7 Pro:</strong> Başka profil tararken kendi hesabını tarama hatası düzeltildi, Durdur sonrası AbortError kilitlenmesi giderildi, HTTP 429'da anında durdurma + hata şeridi eklendi, O(N) hızlı liste çizimi ve sayfalama eklendi.</li>
+            <li><strong>v10.2 Pro:</strong> 429 hız sınırı koruması, Son Takip Kişisini Çıkart sihirbazı, Karşılaştırma Modalı ve Ayarlar Modalı tamamlandı.</li>
           </ul>
         </div>
       </div>
@@ -1890,7 +2236,6 @@
       closeAnalyticsModal();
       switchTab('nonFollowers');
       state.selectedIds.clear();
-      // Güvenli temizlik: Mavi tikli olmayan, koruma listesinde olmayan geri takip etmeyenlerden ilk 25 tanesini seçer
       const candidates = state.nonFollowers.filter((u) => !u.is_verified && !isWhitelisted(u.id)).slice(0, 25);
       candidates.forEach((u) => state.selectedIds.add(String(u.id)));
       renderList();
@@ -1971,8 +2316,8 @@
       }
     });
 
-    overlay.querySelector('#igfc-wl-copy-btn')?.addEventListener('click', () => {
-      navigator.clipboard.writeText(JSON.stringify([...state.whitelist]));
+    overlay.querySelector('#igfc-wl-copy-btn')?.addEventListener('click', async () => {
+      await copyTextSafe(JSON.stringify([...state.whitelist]));
       showToast('Koruma listesi panoya kopyalandı.', 'success');
     });
   }
@@ -2219,52 +2564,60 @@
       });
     });
 
-    window.addEventListener('mousemove', (e) => {
-      if (isDragging) {
-        const dx = e.clientX - dragStartX;
-        const dy = e.clientY - dragStartY;
-        const newLeft = Math.max(0, Math.min(window.innerWidth - 120, initLeft + dx));
-        const newTop = Math.max(0, Math.min(window.innerHeight - 60, initTop + dy));
-        modalEl.style.left = `${newLeft}px`;
-        modalEl.style.top = `${newTop}px`;
-      } else if (activeResizeDir && rRect) {
-        const dx = e.clientX - rStartX;
-        const dy = e.clientY - rStartY;
-        let { left, top, width, height } = rRect;
-        const minW = 500;
-        const minH = 380;
+    window.addEventListener(
+      'mousemove',
+      (e) => {
+        if (isDragging) {
+          const dx = e.clientX - dragStartX;
+          const dy = e.clientY - dragStartY;
+          const newLeft = Math.max(0, Math.min(window.innerWidth - 120, initLeft + dx));
+          const newTop = Math.max(0, Math.min(window.innerHeight - 60, initTop + dy));
+          modalEl.style.left = `${newLeft}px`;
+          modalEl.style.top = `${newTop}px`;
+        } else if (activeResizeDir && rRect) {
+          const dx = e.clientX - rStartX;
+          const dy = e.clientY - rStartY;
+          let { left, top, width, height } = rRect;
+          const minW = 500;
+          const minH = 380;
 
-        if (activeResizeDir.includes('e')) width = Math.max(minW, width + dx);
-        if (activeResizeDir.includes('s')) height = Math.max(minH, height + dy);
-        if (activeResizeDir.includes('w')) {
-          const possibleW = width - dx;
-          if (possibleW >= minW) {
-            width = possibleW;
-            left += dx;
+          if (activeResizeDir.includes('e')) width = Math.max(minW, width + dx);
+          if (activeResizeDir.includes('s')) height = Math.max(minH, height + dy);
+          if (activeResizeDir.includes('w')) {
+            const possibleW = width - dx;
+            if (possibleW >= minW) {
+              width = possibleW;
+              left += dx;
+            }
           }
-        }
-        if (activeResizeDir.includes('n')) {
-          const possibleH = height - dy;
-          if (possibleH >= minH) {
-            height = possibleH;
-            top += dy;
+          if (activeResizeDir.includes('n')) {
+            const possibleH = height - dy;
+            if (possibleH >= minH) {
+              height = possibleH;
+              top += dy;
+            }
           }
+
+          modalEl.style.left = `${left}px`;
+          modalEl.style.top = `${top}px`;
+          modalEl.style.width = `${width}px`;
+          modalEl.style.height = `${height}px`;
         }
+      },
+      { signal: uiSignal }
+    );
 
-        modalEl.style.left = `${left}px`;
-        modalEl.style.top = `${top}px`;
-        modalEl.style.width = `${width}px`;
-        modalEl.style.height = `${height}px`;
-      }
-    });
-
-    window.addEventListener('mouseup', () => {
-      if (isDragging || activeResizeDir) {
-        isDragging = false;
-        activeResizeDir = null;
-        document.body.style.userSelect = '';
-      }
-    });
+    window.addEventListener(
+      'mouseup',
+      () => {
+        if (isDragging || activeResizeDir) {
+          isDragging = false;
+          activeResizeDir = null;
+          document.body.style.userSelect = '';
+        }
+      },
+      { signal: uiSignal }
+    );
   }
 
   // ============================================================================
@@ -2326,7 +2679,7 @@
         day: '2-digit',
         month: '2-digit',
       });
-      el.innerHTML = `(Son: @${escapeHtml(state.username)} • ${escapeHtml(dt)}) <button id="igfc-clear-last-scan-btn" class="igfc-clear-cache-btn" title="Son taranan kişi önbellek kaydını çıkart / temizle">✕</button>`;
+      el.innerHTML = `(Son: @${escapeHtml(state.username)} • ${escapeHtml(dt)}) <button id="igfc-clear-last-scan-btn" class="igfc-clear-cache-btn" title="Son taranan kişi önbellek kaydını temizle">✕</button>`;
       el.querySelector('#igfc-clear-last-scan-btn')?.addEventListener('click', (e) => {
         e.stopPropagation();
         clearScanCache();
@@ -2398,7 +2751,7 @@
         #igfc-modal {
           position: fixed;
           top: 32px;
-          left: calc(50% - 540px);
+          left: max(8px, calc(50% - 540px));
           width: 1080px;
           height: 750px;
           max-width: 96vw;
@@ -2521,7 +2874,7 @@
           justify-content: center;
           cursor: pointer;
           box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-          transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+          transition: background 0.15s ease, border-color 0.15s ease;
         }
         .igfc-win-btn:hover {
           background: var(--accent);
@@ -2608,7 +2961,7 @@
           justify-content: center;
           gap: 5px;
           box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-          transition: filter 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
+          transition: filter 0.15s ease, border-color 0.15s ease;
           box-sizing: border-box;
         }
         .igfc-btn:hover:not(:disabled) {
@@ -2642,6 +2995,29 @@
           font-size: 12px;
         }
         .igfc-status-text { flex: 1; color: var(--text-secondary); }
+        .igfc-error-banner {
+          display: none;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          padding: 10px 14px;
+          background: rgba(239, 68, 68, 0.16);
+          border-bottom: 1px solid rgba(239, 68, 68, 0.55);
+          color: #fecaca;
+          font-size: 12.5px;
+          line-height: 1.45;
+          flex-shrink: 0;
+        }
+        #igfc-modal[data-theme="light"] .igfc-error-banner {
+          background: #fee2e2;
+          color: #991b1b;
+          border-bottom-color: #f87171;
+        }
+        .igfc-error-banner.visible { display: flex; }
+        .igfc-error-banner-body { flex: 1; }
+        .igfc-error-banner-title { font-weight: 700; margin-bottom: 2px; }
+        .igfc-error-banner-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
         .igfc-progress-track {
           width: 180px;
           height: 6px;
@@ -2907,7 +3283,6 @@
       <div id="igfc-toast-container" class="igfc-toast-container"></div>
 
       <div id="igfc-modal" class="igfc-modal" data-theme="midnight">
-        <!-- 8 Yönlü Kenar ve Köşe Boyutlandırma Tutamaçları -->
         <div class="igfc-resizer igfc-resizer-n" data-dir="n"></div>
         <div class="igfc-resizer igfc-resizer-s" data-dir="s"></div>
         <div class="igfc-resizer igfc-resizer-e" data-dir="e"></div>
@@ -2917,17 +3292,15 @@
         <div class="igfc-resizer igfc-resizer-sw" data-dir="sw"></div>
         <div class="igfc-resizer igfc-resizer-se" data-dir="se"></div>
 
-        <!-- Tam Responsive Üst Başlık ve Sabit Pencere Kontrolleri -->
         <div id="igfc-header" class="igfc-header">
           <div class="igfc-header-top">
             <div class="igfc-title">
               <span>📸 IG Follow Checker</span>
-              <button id="igfc-changelog-btn" class="igfc-badge" title="Sürüm Geçmişi ve Yenilikler">v10.2 Pro</button>
+              <button id="igfc-changelog-btn" class="igfc-badge" title="Sürüm Geçmişi ve Yenilikler">v10.7 Pro</button>
               <span id="igfc-quota-badge" class="igfc-quota-pill igfc-hide-on-min">Günlük Kota: 0/150</span>
               <span id="igfc-cache-info" class="igfc-cache-info igfc-hide-on-min" style="font-size:11.5px;color:var(--text-secondary);"></span>
             </div>
 
-            <!-- Sağ Üste Sabitlenmiş Pencere Kontrolleri (Görseldeki Tasarım) -->
             <div class="igfc-win-controls">
               <button id="igfc-zoom-out-btn" class="igfc-win-btn igfc-hide-on-min" title="Yazıyı Küçült">A-</button>
               <span id="igfc-zoom-label" class="igfc-hide-on-min" style="font-size:12px;font-weight:700;padding:0 2px;">%100</span>
@@ -2956,8 +3329,8 @@
               </select>
 
               <select id="igfc-speed-select" class="igfc-select" title="İşlem Hızı / Anti-Ban Modu">
-                <option value="safe">🛡️ Güvenli Mod</option>
-                <option value="normal" selected>⚖️ Dengeli Mod</option>
+                <option value="safe" selected>🛡️ Güvenli Mod (Önerilen)</option>
+                <option value="normal">⚖️ Dengeli Mod</option>
                 <option value="fast">⚡ Hızlı Mod</option>
                 <option value="ultra">🐢 Ultra Güvenli</option>
               </select>
@@ -2967,9 +3340,7 @@
           </div>
         </div>
 
-        <!-- Ana Gövde -->
         <div id="igfc-body-wrap" class="igfc-body-wrap">
-          <!-- 7 Özet İstatistik Kartı -->
           <div class="igfc-stats-row">
             <div class="igfc-stat-box active" data-stat-tab="nonFollowers" title="Seni takip etmeyenleri göster">
               <span class="igfc-stat-label">Takip Etmeyen</span>
@@ -3001,9 +3372,8 @@
             </div>
           </div>
 
-          <!-- Tarama, Arama, Filtre, Sıralama ve Dışa Aktarma Kontrolleri -->
           <div class="igfc-controls">
-            <input id="igfc-username-input" type="text" class="igfc-input" style="width:140px;" placeholder="@kullanici..." value="${escapeHtml(state.username || getDefaultUsername())}" />
+            <input id="igfc-username-input" type="text" class="igfc-input" style="width:140px;" placeholder="@kullanici..." value="${escapeHtml(getDefaultUsername() || state.username)}" />
             <button id="igfc-my-account-btn" class="igfc-btn igfc-btn-success">⚡ Kendi Hesabımı Tara</button>
             <button id="igfc-start-btn" class="igfc-btn igfc-btn-primary">🔍 Kullanıcıyı Tara</button>
             <button id="igfc-unfollow-last-btn" class="igfc-btn igfc-btn-danger" title="En son takip edilen kişiyi hemen çıkart">🎯 Son Takip Kişisini Çıkart</button>
@@ -3043,7 +3413,6 @@
             <input id="igfc-import-json-input" type="file" multiple accept=".json" style="display:none;" />
           </div>
 
-          <!-- Durum ve İlerleme Çubuğu -->
           <div class="igfc-status-bar">
             <span id="igfc-status-msg" class="igfc-status-text">Hazır. "⚡ Kendi Hesabımı Tara" butonuna tıklayarak hemen başlayabilirsiniz.</span>
             <div class="igfc-progress-track">
@@ -3052,13 +3421,25 @@
             <span id="igfc-progress-pct" class="igfc-progress-pct">0%</span>
           </div>
 
-          <!-- Modern Segmented Sekmeler & Hızlı Seçim Kapsülü -->
+          <div id="igfc-error-banner" class="igfc-error-banner" role="alert">
+            <div class="igfc-error-banner-body">
+              <div id="igfc-error-banner-title" class="igfc-error-banner-title">⛔ Hata: Instagram Hız Sınırı (HTTP 429 – Too Many Requests)</div>
+              <div id="igfc-error-banner-text">Instagram oturumunuza geçici istek sınırı uyguladığı için tarama otomatik durduruldu. 30–60 dakika bekleyip Güvenli Mod ile deneyin veya resmi JSON dosyanızı yükleyin.</div>
+            </div>
+            <div class="igfc-error-banner-actions">
+              <button id="igfc-error-json-btn" class="igfc-btn igfc-btn-primary">📂 JSON Yükle</button>
+              <button id="igfc-error-close-btn" class="igfc-win-btn close" title="Uyarıyı Kapat">✕</button>
+            </div>
+          </div>
+
           <div class="igfc-subbar">
             <div class="igfc-tabs">
               <button id="igfc-tab-nonFollowers" class="igfc-tab active" data-tab="nonFollowers">🚫 Takip Etmeyenler <span class="igfc-tab-badge" id="igfc-cnt-nonFollowers">0</span></button>
               <button id="igfc-tab-suspicious" class="igfc-tab" data-tab="suspicious">👻 Şüpheli / Bot <span class="igfc-tab-badge" id="igfc-cnt-suspicious">0</span></button>
               <button id="igfc-tab-fans" class="igfc-tab" data-tab="fans">💙 Takip Etmediklerin <span class="igfc-tab-badge" id="igfc-cnt-fans">0</span></button>
               <button id="igfc-tab-mutuals" class="igfc-tab" data-tab="mutuals">🤝 Karşılıklı <span class="igfc-tab-badge" id="igfc-cnt-mutuals">0</span></button>
+              <button id="igfc-tab-allFollowers" class="igfc-tab" data-tab="allFollowers">👥 Tüm Takipçiler <span class="igfc-tab-badge" id="igfc-cnt-allFollowers">0</span></button>
+              <button id="igfc-tab-allFollowing" class="igfc-tab" data-tab="allFollowing">📤 Tüm Takip Edilen <span class="igfc-tab-badge" id="igfc-cnt-allFollowing">0</span></button>
               <button id="igfc-tab-lostFollowers" class="igfc-tab" data-tab="lostFollowers">📉 Yeni Çıkanlar <span class="igfc-tab-badge" id="igfc-cnt-lostFollowers">0</span></button>
               <button id="igfc-tab-newFollowers" class="igfc-tab" data-tab="newFollowers">📈 Yeni Gelenler <span class="igfc-tab-badge" id="igfc-cnt-newFollowers">0</span></button>
               <button id="igfc-tab-favorites" class="igfc-tab" data-tab="favorites">💛 Favoriler <span class="igfc-tab-badge" id="igfc-cnt-favorites">0</span></button>
@@ -3073,7 +3454,6 @@
             </div>
           </div>
 
-          <!-- Kullanıcı Listesi ve Yüzen Eylem Barı -->
           <div class="igfc-list-wrapper">
             <div id="igfc-list-container" class="igfc-list"></div>
 
@@ -3090,7 +3470,6 @@
           </div>
         </div>
 
-        <!-- Alt Günlük Çekmecesi (Footer Drawer) -->
         <div id="igfc-footer-drawer" class="igfc-footer-drawer">
           <div id="igfc-footer-toggle" class="igfc-footer-header">
             <span id="igfc-last-log-preview">📜 İşlem günlüğü hazır.</span>
@@ -3107,7 +3486,6 @@
     const headerEl = document.getElementById('igfc-header');
     initWindowDragAndResize(modalEl, headerEl);
 
-    // Ayarları Yansıt
     const themeSel = document.getElementById('igfc-theme-select');
     if (themeSel) themeSel.value = state.theme;
     const speedSel = document.getElementById('igfc-speed-select');
@@ -3118,17 +3496,26 @@
     updateQuotaBadgeUI();
     updateCacheInfoUI();
 
-    // Klavye Kısayolları
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        closeAllSubModals();
-      } else if (e.key === '/' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.key === 'Escape') {
+          closeAllSubModals();
+        } else if (e.key === '/' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          document.getElementById('igfc-search-input')?.focus();
+        }
+      },
+      { signal: uiSignal }
+    );
+
+    document.getElementById('igfc-username-input')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
         e.preventDefault();
-        document.getElementById('igfc-search-input')?.focus();
+        startScan(false);
       }
     });
 
-    // Üst Bar ve Modal Butonları
     document.getElementById('igfc-last-follow-modal-btn')?.addEventListener('click', openLastFollowModal);
     document.getElementById('igfc-unfollow-last-btn')?.addEventListener('click', openLastFollowModal);
     document.getElementById('igfc-changelog-btn')?.addEventListener('click', openChangelogModal);
@@ -3171,25 +3558,24 @@
     });
     document.getElementById('igfc-maximize-btn')?.addEventListener('click', toggleMaximize);
     document.getElementById('igfc-close-btn')?.addEventListener('click', () => {
-      stopScan();
-      root.remove();
+      window.__igfcCleanup();
     });
 
     document.getElementById('igfc-footer-toggle')?.addEventListener('click', toggleFooterDrawer);
 
-    // Tarama Kontrolleri
     document.getElementById('igfc-start-btn')?.addEventListener('click', () => startScan(false));
     document.getElementById('igfc-my-account-btn')?.addEventListener('click', () => startScan(true));
     document.getElementById('igfc-stop-btn')?.addEventListener('click', stopScan);
 
-    // Arama, Filtre, Sıralama
     document.getElementById('igfc-search-input')?.addEventListener('input', (e) => {
       state.searchQuery = e.target.value;
+      state.renderLimit = 200;
       renderList();
     });
 
     document.getElementById('igfc-filter-select')?.addEventListener('change', (e) => {
       state.filterType = e.target.value;
+      state.renderLimit = 200;
       renderList();
     });
 
@@ -3198,7 +3584,6 @@
       renderList();
     });
 
-    // Hızlı Seçim Kapsül Butonları
     document.getElementById('igfc-select-all-btn')?.addEventListener('click', () => {
       const visible = getFilteredAndSortedList();
       visible.forEach((u) => {
@@ -3228,13 +3613,11 @@
     document.getElementById('igfc-deselect-all-btn')?.addEventListener('click', clearSelections);
     document.getElementById('igfc-floating-cancel-btn')?.addEventListener('click', clearSelections);
 
-    // Yüzen Toplu İşlem Butonları
     document.getElementById('igfc-bulk-whitelist-btn')?.addEventListener('click', () => runBulkAction('whitelist'));
     document.getElementById('igfc-bulk-unfollow-btn')?.addEventListener('click', () => runBulkAction('unfollow'));
     document.getElementById('igfc-bulk-follow-btn')?.addEventListener('click', () => runBulkAction('follow'));
     document.getElementById('igfc-bulk-remove-follower-btn')?.addEventListener('click', () => runBulkAction('remove_follower'));
 
-    // Kopyala & İndir Butonları
     document.getElementById('igfc-copy-btn')?.addEventListener('click', copyListToClipboard);
     document.getElementById('igfc-csv-btn')?.addEventListener('click', exportToCSV);
     document.getElementById('igfc-export-btn')?.addEventListener('click', exportToJSON);
@@ -3245,6 +3628,11 @@
     document.getElementById('igfc-import-json-input')?.addEventListener('change', (e) => {
       importOfficialJsonFiles(e.target.files);
     });
+    document.getElementById('igfc-error-json-btn')?.addEventListener('click', () => {
+      document.getElementById('igfc-import-json-input')?.click();
+    });
+    document.getElementById('igfc-error-close-btn')?.addEventListener('click', clearRateLimitError);
+
     document.getElementById('igfc-lang-btn')?.addEventListener('click', (e) => {
       state.lang = state.lang === 'tr' ? 'en' : 'tr';
       const isEn = state.lang === 'en';
@@ -3263,7 +3651,6 @@
       showToast(isEn ? 'Language switched to English.' : 'Dil Türkçe olarak değiştirildi.', 'info');
     });
 
-    // Sekmeler ve İstatistik Kutuları
     document.querySelectorAll('.igfc-tab').forEach((btn) => {
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
@@ -3306,7 +3693,46 @@
     div.textContent = lineText;
     list.prepend(div);
   }
-  const logMessage = addLog;
+
+  let last429ToastAt = 0;
+
+  function notifyRateLimitError(sourceUrl = '') {
+    const isEn = state.lang === 'en';
+    const title = isEn
+      ? '⛔ Error: Instagram Rate Limit (HTTP 429 – Too Many Requests)'
+      : '⛔ Hata: Instagram Hız Sınırı (HTTP 429 – Too Many Requests)';
+    const text = isEn
+      ? 'Instagram temporarily rate-limited your session so the scan was stopped. Wait 30–60 minutes and try Safe Mode, or load your official Instagram JSON.'
+      : 'Instagram oturumunuza geçici istek sınırı (429) uyguladığı için tarama otomatik durduruldu. 30–60 dakika bekleyip Güvenli Mod ile deneyin veya resmi JSON dosyanızı yükleyin.';
+
+    state.lastRateLimitError = text;
+    const banner = document.getElementById('igfc-error-banner');
+    const titleEl = document.getElementById('igfc-error-banner-title');
+    const textEl = document.getElementById('igfc-error-banner-text');
+    if (titleEl) titleEl.textContent = title;
+    if (textEl) textEl.textContent = text;
+    if (banner) banner.classList.add('visible');
+
+    state.bulkAbort = true;
+    if (state.abortController) {
+      try {
+        state.abortController.abort();
+      } catch (_) {}
+    }
+
+    updateStatus(title);
+    const now = Date.now();
+    if (now - last429ToastAt > 6000) {
+      last429ToastAt = now;
+      addLog(`⛔ HTTP 429 algılandı${sourceUrl ? ` (${sourceUrl.split('?')[0]})` : ''} — tarama durduruldu.`, 'error');
+      showToast(isEn ? '⛔ HTTP 429! Scan stopped.' : '⛔ HTTP 429 algılandı! Tarama durduruldu.', 'error');
+    }
+  }
+
+  function clearRateLimitError() {
+    state.lastRateLimitError = '';
+    document.getElementById('igfc-error-banner')?.classList.remove('visible');
+  }
 
   function showToast(msg, type = 'info') {
     const container = document.getElementById('igfc-toast-container');
@@ -3329,15 +3755,21 @@
 
   function computeCategories() {
     const followerSet = new Set(state.followers.map((u) => String(u.id)));
+    const followerNames = new Set(state.followers.map((u) => (u.username || '').toLowerCase()).filter(Boolean));
     const followingSet = new Set(state.following.map((u) => String(u.id)));
+    const followingNames = new Set(state.following.map((u) => (u.username || '').toLowerCase()).filter(Boolean));
 
     state.nonFollowers = [];
     state.mutuals = [];
     state.suspicious = [];
+    state.fans = [];
+    const suspSeen = new Set();
 
     for (const u of state.following) {
       const uid = String(u.id);
-      const isNonFollower = !followerSet.has(uid);
+      const uLow = (u.username || '').toLowerCase();
+      const isFollower = followerSet.has(uid) || (uLow && followerNames.has(uLow));
+      const isNonFollower = !isFollower;
       const susp = computeSuspicionInfo(u, isNonFollower);
       u.suspicionScore = susp.score;
       u.suspicionReasons = susp.reasons;
@@ -3345,16 +3777,28 @@
       if (isNonFollower) state.nonFollowers.push(u);
       else state.mutuals.push(u);
 
-      if (susp.isSuspicious) state.suspicious.push(u);
+      if (susp.isSuspicious && !suspSeen.has(uid)) {
+        suspSeen.add(uid);
+        state.suspicious.push(u);
+      }
     }
 
-    state.fans = state.followers.filter((u) => {
+    for (const u of state.followers) {
       const uid = String(u.id);
+      const uLow = (u.username || '').toLowerCase();
+      const inFollowing = followingSet.has(uid) || (uLow && followingNames.has(uLow));
       const susp = computeSuspicionInfo(u, false);
       u.suspicionScore = susp.score;
       u.suspicionReasons = susp.reasons;
-      return !followingSet.has(uid);
-    });
+
+      if (!inFollowing) {
+        state.fans.push(u);
+      }
+      if (susp.isSuspicious && !suspSeen.has(uid)) {
+        suspSeen.add(uid);
+        state.suspicious.push(u);
+      }
+    }
 
     updateStatsUI();
   }
@@ -3369,13 +3813,24 @@
     setTxt('igfc-stat-fans', state.fans.length);
     setTxt('igfc-stat-mutuals', state.mutuals.length);
     setTxt('igfc-stat-lost', state.lostFollowers.length);
-    setTxt('igfc-stat-followers', state.followers.length);
-    setTxt('igfc-stat-following', state.following.length);
+    const flwDisplay =
+      typeof state.expectedFollowersCount === 'number' && state.expectedFollowersCount > 0 && state.followers.length !== state.expectedFollowersCount
+        ? `${state.followers.length} / ${state.expectedFollowersCount}`
+        : `${state.followers.length}`;
+    const flwingDisplay =
+      typeof state.expectedFollowingCount === 'number' && state.expectedFollowingCount > 0 && state.following.length !== state.expectedFollowingCount
+        ? `${state.following.length} / ${state.expectedFollowingCount}`
+        : `${state.following.length}`;
+
+    setTxt('igfc-stat-followers', flwDisplay);
+    setTxt('igfc-stat-following', flwingDisplay);
 
     setTxt('igfc-cnt-nonFollowers', state.nonFollowers.length);
     setTxt('igfc-cnt-suspicious', state.suspicious.length);
     setTxt('igfc-cnt-fans', state.fans.length);
     setTxt('igfc-cnt-mutuals', state.mutuals.length);
+    setTxt('igfc-cnt-allFollowers', state.followers.length);
+    setTxt('igfc-cnt-allFollowing', state.following.length);
     setTxt('igfc-cnt-lostFollowers', state.lostFollowers.length);
     setTxt('igfc-cnt-newFollowers', state.newFollowers.length);
     setTxt('igfc-cnt-favorites', state.favorites.size);
@@ -3385,6 +3840,7 @@
 
   function switchTab(tabName) {
     state.activeTab = tabName;
+    state.renderLimit = 200;
     state.selectedIds.clear();
     state.lastClickedIndex = -1;
     updateBulkButtons();
@@ -3512,7 +3968,7 @@
     openUserDetailModal(user);
   }
 
-  function renderUserCard(u, index, currentVisibleList) {
+  function renderUserCard(u, index, currentVisibleList, followingIds, followerIds) {
     const uid = String(u.id);
     const isSelected = state.selectedIds.has(uid);
     const isProtected = isWhitelisted(uid);
@@ -3522,8 +3978,6 @@
     const isLastFollowed = state.following[0] && String(state.following[0].id) === uid;
     const isLastFollower = state.followers[0] && String(state.followers[0].id) === uid;
 
-    const followingIds = new Set(state.following.map((item) => String(item.id)));
-    const followerIds = new Set(state.followers.map((item) => String(item.id)));
     const youFollow = followingIds.has(uid);
     const followsYou = followerIds.has(uid);
 
@@ -3692,15 +4146,48 @@
     if (users.length === 0) {
       const empty = document.createElement('div');
       empty.style.cssText = 'grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-secondary);';
-      empty.textContent = 'Bu sekmede veya filtrede gösterilecek kullanıcı bulunamadı.';
+      if (state.lastRateLimitError && state.followers.length === 0 && state.following.length === 0) {
+        empty.style.color = '#f87171';
+        empty.innerHTML = `
+          <div style="font-size:26px;margin-bottom:8px;">⛔</div>
+          <div style="font-size:14px;font-weight:700;margin-bottom:6px;">Hata: Instagram Hız Sınırı (HTTP 429 – Too Many Requests)</div>
+          <div style="font-size:12.5px;max-width:560px;margin:0 auto;line-height:1.5;color:var(--text-secondary);">${escapeHtml(state.lastRateLimitError)}</div>
+        `;
+      } else {
+        empty.textContent = 'Bu sekmede veya filtrede gösterilecek kullanıcı bulunamadı.';
+      }
       container.appendChild(empty);
       return;
     }
 
+    const followingIds = new Set(state.following.map((item) => String(item.id)));
+    const followerIds = new Set(state.followers.map((item) => String(item.id)));
+
+    const limit = state.renderLimit || 200;
     const fragment = document.createDocumentFragment();
-    users.slice(0, 800).forEach((u, idx) => {
-      fragment.appendChild(renderUserCard(u, idx, users));
+    users.slice(0, limit).forEach((u, idx) => {
+      fragment.appendChild(renderUserCard(u, idx, users, followingIds, followerIds));
     });
+
+    if (users.length > limit) {
+      const remaining = users.length - limit;
+      const loadMoreWrap = document.createElement('div');
+      loadMoreWrap.style.cssText = 'grid-column: 1 / -1; display: flex; justify-content: center; gap: 10px; padding: 12px 0;';
+      loadMoreWrap.innerHTML = `
+        <button id="igfc-load-more-btn" class="igfc-btn igfc-btn-primary">⬇ Daha Fazla Göster (+${Math.min(remaining, 200)} / Kalan: ${remaining})</button>
+        <button id="igfc-load-all-btn" class="igfc-btn igfc-btn-secondary">📋 Tümünü Göster (${users.length})</button>
+      `;
+      loadMoreWrap.querySelector('#igfc-load-more-btn')?.addEventListener('click', () => {
+        state.renderLimit = limit + 200;
+        renderList();
+      });
+      loadMoreWrap.querySelector('#igfc-load-all-btn')?.addEventListener('click', () => {
+        state.renderLimit = users.length + 100;
+        renderList();
+      });
+      fragment.appendChild(loadMoreWrap);
+    }
+
     container.appendChild(fragment);
   }
 
@@ -3711,7 +4198,10 @@
   function stopScan() {
     state.bulkAbort = true;
     if (state.abortController) {
-      state.abortController.abort();
+      try {
+        state.abortController.abort();
+      } catch (_) {}
+      state.abortController = null;
     }
     state.isRunning = false;
     state.isBulkRunning = false;
@@ -3724,6 +4214,7 @@
     if (state.isRunning) return;
     state.isRunning = true;
     state.abortController = new AbortController();
+    clearRateLimitError();
 
     const startBtn = document.getElementById('igfc-start-btn');
     const myBtn = document.getElementById('igfc-my-account-btn');
@@ -3742,18 +4233,16 @@
 
       const cookieUserId = getCookie('ds_user_id');
       const viewer = getLoggedInViewerFromDOM();
-      const isScanningSelf =
+      let isScanningSelf =
         forceMyAccount ||
         !targetUsername ||
-        (viewer?.username && viewer.username.toLowerCase() === targetUsername.toLowerCase()) ||
-        (cookieUserId && getDefaultUsername().toLowerCase() === targetUsername.toLowerCase());
+        Boolean(viewer?.username && viewer.username.toLowerCase() === targetUsername.toLowerCase());
 
       if (isScanningSelf && cookieUserId) {
-        // Kendi hesabımızı tararken web_profile_info çağrısı YAPILMAZ (429 hatasını %100 engeller)
         targetUserId = String(cookieUserId);
-        targetUsername = viewer?.username || targetUsername || getDefaultUsername() || 'aktif_hesap';
-        if (inputEl) inputEl.value = targetUsername;
-        const domSelf = extractStrictProfileFromScripts(targetUsername);
+        targetUsername = viewer?.username || (forceMyAccount ? '' : targetUsername) || 'aktif_hesap';
+        if (inputEl && targetUsername !== 'aktif_hesap') inputEl.value = targetUsername;
+        const domSelf = targetUsername !== 'aktif_hesap' ? extractStrictProfileFromScripts(targetUsername) : null;
         if (domSelf) {
           expectedFollowers = domSelf.followerCount;
           expectedFollowing = domSelf.followingCount;
@@ -3769,18 +4258,149 @@
         if (inputEl) inputEl.value = targetUsername;
       }
 
-      addLog(`Tarama başladı: @${targetUsername} (ID: ${targetUserId})`, 'info');
+      if (cookieUserId && String(targetUserId) === String(cookieUserId)) {
+        isScanningSelf = true;
+      }
 
-      const followers = await fetchFriendshipList(targetUserId, 'followers', expectedFollowers, 10, 55);
-      const following = await fetchFriendshipList(targetUserId, 'following', expectedFollowing, 55, 95);
+      const domCounts = extractVisibleCountsFromDOM(targetUsername);
+      if (expectedFollowers == null && domCounts?.followerCount != null) expectedFollowers = domCounts.followerCount;
+      if (expectedFollowing == null && domCounts?.followingCount != null) expectedFollowing = domCounts.followingCount;
 
+      // Yeni tarama başlarken eski verileri sıfırla ki sayaçlar canlı olarak 0'dan artsın
       state.username = targetUsername;
       state.userId = targetUserId;
-      state.lastScannedAt = new Date().toISOString();
-      state.followers = followers;
-      state.following = following;
+      state.expectedFollowersCount = expectedFollowers;
+      state.expectedFollowingCount = expectedFollowing;
+      state.followers = [];
+      state.following = [];
+      state.nonFollowers = [];
+      state.fans = [];
+      state.mutuals = [];
+      state.suspicious = [];
+      state.lostFollowers = [];
+      state.newFollowers = [];
+      state.selectedIds.clear();
+      updateStatsUI();
+      updateBulkButtons();
+      renderList();
 
-      compareAndSaveSnapshot(targetUserId, followers);
+      addLog(`Tarama başladı: @${targetUsername} (ID: ${targetUserId})`, 'info');
+
+      let lastLiveRender = 0;
+      const triggerLiveUpdate = () => {
+        computeCategories();
+        const now = Date.now();
+        if (now - lastLiveRender > 600) {
+          lastLiveRender = now;
+          renderList();
+        }
+      };
+
+      const followers = await fetchFriendshipList(
+        targetUserId,
+        'followers',
+        expectedFollowers,
+        10,
+        55,
+        (liveList) => {
+          state.followers = liveList;
+          triggerLiveUpdate();
+        }
+      );
+      state.followers = followers;
+      computeCategories();
+      renderList();
+
+      const following = await fetchFriendshipList(
+        targetUserId,
+        'following',
+        expectedFollowing,
+        55,
+        95,
+        (liveList) => {
+          state.following = liveList;
+          triggerLiveUpdate();
+        }
+      );
+      state.following = following;
+      state.lastScannedAt = new Date().toISOString();
+      computeCategories();
+
+      // Kendi hesabımızda HEM "Takip Etmeyen" HEM "Takip Etmediğin" listelerini Instagram'ın gerçek ilişki tablosuyla (show_many) %100 kesin doğrula
+      if (isScanningSelf && !state.lastRateLimitError) {
+        const verifyPoolMap = new Map();
+        for (const u of [...state.nonFollowers, ...state.fans]) {
+          const uid = String(u?.id || '');
+          if (/^\d+$/.test(uid) && !verifyPoolMap.has(uid)) {
+            verifyPoolMap.set(uid, u);
+          }
+        }
+        const verifyList = Array.from(verifyPoolMap.values());
+        if (verifyList.length > 0 && verifyList.length <= 400) {
+          updateStatus(`🔍 İlişki doğrulaması yapılıyor (${verifyList.length} kişi kontrol ediliyor)...`);
+          try {
+            const flwMap = new Map(state.followers.map((u) => [String(u.id), u]));
+            const flwingMap = new Map(state.following.map((u) => [String(u.id), u]));
+            const jazoestVal = getJazoest(getAppCSRFToken());
+            let fixedCount = 0;
+
+            for (let i = 0; i < verifyList.length; i += 50) {
+              if (state.lastRateLimitError || state.abortController?.signal.aborted) break;
+              const chunk = verifyList.slice(i, i + 50);
+              const ids = chunk.map((u) => String(u.id));
+              const res = await fetchWithRetry(
+                'https://www.instagram.com/api/v1/friendships/show_many/',
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+                  body: `user_ids=${ids.join(',')}&jazoest=${encodeURIComponent(jazoestVal)}`,
+                },
+                0
+              );
+              if (res && res.ok) {
+                const data = await safeParseJson(res);
+                const statuses = data?.friendship_statuses || {};
+                for (const u of chunk) {
+                  const uid = String(u.id);
+                  const st = statuses[uid];
+                  if (!st) continue;
+
+                  // Gerçekte seni takip ediyorsa followers listesinde mutlaka olmalı
+                  if (st.followed_by === true && !flwMap.has(uid)) {
+                    flwMap.set(uid, { ...u, followOrderIndex: flwMap.size });
+                    fixedCount++;
+                  } else if (st.followed_by === false && flwMap.has(uid)) {
+                    // Gerçekte seni takip etmiyorsa (eski/işaretli kayıt) followers'tan çıkar
+                    flwMap.delete(uid);
+                    fixedCount++;
+                  }
+
+                  // Gerçekte sen onu takip ediyorsan following listesinde mutlaka olmalı
+                  if (st.following === true && !flwingMap.has(uid)) {
+                    flwingMap.set(uid, { ...u, followOrderIndex: flwingMap.size });
+                    fixedCount++;
+                  } else if (st.following === false && flwingMap.has(uid)) {
+                    // Gerçekte sen takip etmiyorsan following'den çıkar
+                    flwingMap.delete(uid);
+                    fixedCount++;
+                  }
+                }
+              }
+              if (i + 50 < verifyList.length) await sleep(350);
+            }
+
+            if (fixedCount > 0) {
+              state.followers = Array.from(flwMap.values()).map((u, idx) => ({ ...u, followOrderIndex: idx }));
+              state.following = Array.from(flwingMap.values()).map((u, idx) => ({ ...u, followOrderIndex: idx }));
+              addLog(`✅ Kesin İlişki Doğrulaması: ${fixedCount} yanlış eşleşme düzeltildi.`, 'success');
+            }
+          } catch (err) {
+            if (err.name === 'AbortError') throw err;
+          }
+        }
+      }
+
+      compareAndSaveSnapshot(targetUserId, state.followers);
       computeCategories();
       saveLastScanCache();
       saveScanHistory();
@@ -3797,7 +4417,12 @@
       showToast(`Tarama tamamlandı! ${state.nonFollowers.length} kişi seni geri takip etmiyor.`, 'success');
     } catch (err) {
       if (err.name === 'AbortError') {
-        addLog('⏹ Tarama kullanıcı tarafından iptal edildi.', 'warn');
+        if (state.lastRateLimitError) {
+          updateStatus('⛔ Tarama durduruldu: Instagram Hız Sınırı (HTTP 429 – Too Many Requests)');
+        } else {
+          addLog('⏹ Tarama kullanıcı tarafından iptal edildi.', 'warn');
+        }
+        renderList();
       } else {
         addLog(`❌ Tarama hatası: ${err.message}`, 'error');
         updateStatus(`Hata: ${err.message}`);
@@ -3805,6 +4430,7 @@
       }
     } finally {
       state.isRunning = false;
+      state.abortController = null;
       if (startBtn) startBtn.disabled = false;
       if (myBtn) myBtn.disabled = false;
       if (stopBtn) stopBtn.disabled = true;
@@ -3829,7 +4455,7 @@
     state.isBulkRunning = true;
     state.bulkAbort = false;
 
-    const speed = SPEED_CONFIGS[state.speedMode] || SPEED_CONFIGS.normal;
+    const speed = SPEED_CONFIGS[state.speedMode] || SPEED_CONFIGS.safe;
     const stopBtn = document.getElementById('igfc-stop-btn');
     if (stopBtn) stopBtn.disabled = false;
 
@@ -3844,68 +4470,70 @@
       .filter(Boolean);
 
     let completed = 0;
-    for (const user of targets) {
-      if (state.bulkAbort) break;
-      try {
-        if (actionType === 'unfollow') {
-          await unfollowUser(user.id);
-          saveUnfollowHistory(user, 'unfollow');
-          state.following = state.following.filter((u) => String(u.id) !== String(user.id));
-        } else if (actionType === 'follow') {
-          await followUser(user.id);
-          saveUnfollowHistory(user, 'follow');
-          if (!state.following.some((u) => String(u.id) === String(user.id))) {
-            state.following.unshift(user);
+    try {
+      for (const user of targets) {
+        if (state.bulkAbort) break;
+        try {
+          if (actionType === 'unfollow') {
+            await unfollowUser(user.id);
+            saveUnfollowHistory(user, 'unfollow');
+            state.following = state.following.filter((u) => String(u.id) !== String(user.id));
+          } else if (actionType === 'follow') {
+            await followUser(user.id);
+            saveUnfollowHistory(user, 'follow');
+            if (!state.following.some((u) => String(u.id) === String(user.id))) {
+              state.following.unshift(user);
+            }
+          } else if (actionType === 'remove_follower') {
+            await removeFollowerUser(user.id);
+            saveUnfollowHistory(user, 'remove_follower');
+            state.followers = state.followers.filter((u) => String(u.id) !== String(user.id));
           }
-        } else if (actionType === 'remove_follower') {
-          await removeFollowerUser(user.id);
-          saveUnfollowHistory(user, 'remove_follower');
-          state.followers = state.followers.filter((u) => String(u.id) !== String(user.id));
+
+          state.selectedIds.delete(String(user.id));
+          completed++;
+
+          const pct = Math.round((completed / targets.length) * 100);
+          updateProgress(pct);
+          updateStatus(`İşleniyor (@${user.username}): ${completed}/${targets.length}`);
+          computeCategories();
+          renderList();
+          updateBulkButtons();
+
+          if (state.autoCooldown && completed % speed.batchSize === 0 && completed < targets.length) {
+            addLog(`🛡️ Anti-Ban molası: ${speed.batchPauseSec} sn bekleniyor...`, 'warn');
+            updateStatus(`Güvenlik molası: ${speed.batchPauseSec} sn bekleniyor...`);
+            await sleep(speed.batchPauseSec * 1000);
+          } else if (completed < targets.length) {
+            await sleep(getRateLimitDelay('action'));
+          }
+        } catch (err) {
+          addLog(`❌ İşlem hatası (@${user.username}): ${err.message}`, 'error');
         }
-
-        state.selectedIds.delete(String(user.id));
-        completed++;
-
-        const pct = Math.round((completed / targets.length) * 100);
-        updateProgress(pct);
-        updateStatus(`İşleniyor (@${user.username}): ${completed}/${targets.length}`);
-        computeCategories();
-        renderList();
-        updateBulkButtons();
-
-        if (state.autoCooldown && completed % speed.batchSize === 0 && completed < targets.length) {
-          addLog(`🛡️ Anti-Ban molası: ${speed.batchPauseSec} sn bekleniyor...`, 'warn');
-          updateStatus(`Güvenlik molası: ${speed.batchPauseSec} sn bekleniyor...`);
-          await sleep(speed.batchPauseSec * 1000);
-        } else if (completed < targets.length) {
-          await sleep(getRateLimitDelay('action'));
-        }
-      } catch (err) {
-        addLog(`❌ İşlem hatası (@${user.username}): ${err.message}`, 'error');
       }
+    } finally {
+      saveLastScanCache();
+      state.isBulkRunning = false;
+      if (stopBtn) stopBtn.disabled = true;
+      showToast(`Toplu işlem tamamlandı (${completed}/${targets.length}).`, 'success');
     }
-
-    saveLastScanCache();
-    state.isBulkRunning = false;
-    if (stopBtn) stopBtn.disabled = true;
-    showToast(`Toplu işlem tamamlandı (${completed}/${targets.length}).`, 'success');
   }
 
   // ============================================================================
   // KOPYALAMA VE DIŞA AKTARMA (CSV / JSON)
   // ============================================================================
 
-  function copyListToClipboard() {
+  async function copyListToClipboard() {
     const list = getFilteredAndSortedList();
     if (!list.length) {
       showToast('Kopyalanacak kullanıcı bulunamadı.', 'warning');
       return;
     }
     const text = list.map((u) => `@${u.username}`).join('\n');
-    navigator.clipboard.writeText(text);
-    showToast(`${list.length} kullanıcı adı panoya kopyalandı.`, 'success');
+    const ok = await copyTextSafe(text);
+    if (ok) showToast(`${list.length} kullanıcı adı panoya kopyalandı.`, 'success');
+    else showToast('Panoya kopyalanamadı.', 'error');
   }
-  const copyActiveListUsernames = copyListToClipboard;
 
   function exportToCSV() {
     const list = getFilteredAndSortedList();
@@ -3934,7 +4562,6 @@
     URL.revokeObjectURL(url);
     showToast('CSV dosyası indirildi.', 'success');
   }
-  const exportCsv = exportToCSV;
 
   function exportToJSON() {
     const payload = {
@@ -3974,7 +4601,6 @@
     URL.revokeObjectURL(url);
     showToast('JSON raporu indirildi.', 'success');
   }
-  const exportResults = exportToJSON;
 
   // ============================================================================
   // BAŞLATMA (INITIALIZATION)
