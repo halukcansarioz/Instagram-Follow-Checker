@@ -1,11 +1,12 @@
 /**
- * Instagram Follow Checker Pro – Tam Sürüm (v10.7 Pro Ultimate)
- * Sade, Hızlı & Kararlı Sürüm:
- * - Başka profil tarama (isScanningSelf) hatası düzeltildi
- * - Durdur sonrası AbortController kilitlenmesi giderildi
- * - HTTP 429 hız sınırında anında durdurma + görünür hata şeridi eklendi
- * - İmleç (cursor) sonsuz döngü koruması ve O(N) hızlı liste render eklendi
- * - Konsolda tekrar çalıştırmada event sızıntısı ve localStorage kota taşması engellendi
+- Instagram Follow Checker Pro – Tam Sürüm (v10.15 Pro Ultimate)
+- Sade, Hızlı & Kararlı Sürüm:
+- - Takip edilen gizli hesaplarda eksik veri sorunu düzeltildi (özel başlıklar, geçersiz order temizliği, çift geçiş + otomatik a-z/0-9 arama tamamlama)
+- - Başka profil tarama (isScanningSelf) hatası düzeltildi
+- - Durdur sonrası AbortController kilitlenmesi giderildi
+- - HTTP 429 hız sınırında anında durdurma + görünür hata şeridi eklendi
+- - İmleç (cursor) sonsuz döngü koruması ve O(N) hızlı liste render eklendi
+- - Konsolda tekrar çalıştırmada event sızıntısı ve localStorage kota taşması engellendi
  */
 
 (() => {
@@ -22,6 +23,7 @@
 
   // Sabitler (Instagram GraphQL Query Hashes & API Parameters)
   const IG_APP_ID = '936619743392459';
+  const IG_ASBD_ID = '129477';
   const FOLLOWERS_QUERY_HASH = 'c76146de99bb02f6415203be841dd25a';
   const FOLLOWING_QUERY_HASH = 'd04b0a864b4b54837c0d870b0e77e076';
   const FOLLOWERS_QUERY_HASH_ALT = '37479f2b8209594dde7facb0d904896a';
@@ -29,7 +31,7 @@
   const TIMELINE_DOC_ID = '9310670392322965';
   const REST_FOLLOWERS_PAGE_SIZE = 12;
   const REST_FOLLOWING_PAGE_SIZE = 24;
-  const GQL_PAGE_SIZE = 24;
+  const GQL_PAGE_SIZE = 50;
 
   // LocalStorage Anahtarları
   const STORAGE_WHITELIST = 'ig_fc_whitelist_v5';
@@ -47,8 +49,9 @@
   const SPEED_CONFIGS = {
     safe: {
       label: '🛡️ Güvenli Mod (Önerilen)',
-      scanDelayMin: 1200,
-      scanDelayMax: 2200,
+      scanDelayMin: 600,
+      scanDelayMax: 1050,
+      scanConcurrency: 2,
       actionDelayMin: 4000,
       actionDelayMax: 7500,
       batchSize: 10,
@@ -56,8 +59,9 @@
     },
     normal: {
       label: '⚖️ Dengeli Mod',
-      scanDelayMin: 700,
-      scanDelayMax: 1400,
+      scanDelayMin: 350,
+      scanDelayMax: 650,
+      scanConcurrency: 3,
       actionDelayMin: 2200,
       actionDelayMax: 4200,
       batchSize: 15,
@@ -65,8 +69,9 @@
     },
     fast: {
       label: '⚡ Hızlı Mod',
-      scanDelayMin: 350,
-      scanDelayMax: 750,
+      scanDelayMin: 180,
+      scanDelayMax: 360,
+      scanConcurrency: 4,
       actionDelayMin: 1100,
       actionDelayMax: 2200,
       batchSize: 25,
@@ -74,8 +79,9 @@
     },
     ultra: {
       label: '🐢 Ultra Güvenli Mod',
-      scanDelayMin: 1800,
-      scanDelayMax: 3200,
+      scanDelayMin: 1100,
+      scanDelayMax: 1800,
+      scanConcurrency: 1,
       actionDelayMin: 6000,
       actionDelayMax: 11000,
       batchSize: 8,
@@ -93,6 +99,7 @@
     abortController: null,
     bulkAbort: false,
     lastRateLimitError: '',
+    isScanningSelf: true,
     username: '',
     userId: '',
     lastScannedAt: null,
@@ -296,9 +303,22 @@
     return IG_APP_ID;
   }
 
+  let cachedWWWClaim = '';
+
+  function getWWWClaim() {
+    if (cachedWWWClaim) return cachedWWWClaim;
+    try {
+      return sessionStorage.getItem('www-claim-v2') || '0';
+    } catch (_) {
+      return '0';
+    }
+  }
+
   function getAppHeaders(extra = {}) {
     return {
       'X-IG-App-ID': getAppIGAppID(),
+      'X-ASBD-ID': IG_ASBD_ID,
+      'X-IG-WWW-Claim': getWWWClaim(),
       'X-CSRFToken': getAppCSRFToken(),
       'X-Requested-With': 'XMLHttpRequest',
       ...extra,
@@ -717,6 +737,7 @@
       if (data && Array.isArray(data.followers) && Array.isArray(data.following)) {
         state.username = data.username || '';
         state.userId = data.userId || '';
+        state.isScanningSelf = typeof data.isScanningSelf === 'boolean' ? data.isScanningSelf : true;
         state.lastScannedAt = data.lastScannedAt || null;
         state.followers = data.followers;
         state.following = data.following;
@@ -731,6 +752,7 @@
   function saveLastScanCache() {
     try {
       const payload = {
+        isScanningSelf: state.isScanningSelf,
         username: state.username,
         userId: state.userId,
         lastScannedAt: state.lastScannedAt,
@@ -972,6 +994,12 @@
       obj.username.toLowerCase() === targetUsername.toLowerCase() &&
       (obj.id || obj.pk)
     ) {
+      const followedByViewer =
+        typeof obj.followed_by_viewer === 'boolean'
+          ? obj.followed_by_viewer
+          : typeof obj.friendship_status?.following === 'boolean'
+          ? obj.friendship_status.following
+          : null;
       return {
         id: String(obj.id || obj.pk),
         username: obj.username,
@@ -982,6 +1010,7 @@
         mediaCount: obj.edge_owner_to_timeline_media?.count ?? obj.media_count ?? null,
         isVerified: Boolean(obj.is_verified),
         isPrivate: Boolean(obj.is_private),
+        followedByViewer,
         biography: obj.biography || '',
         externalUrl: obj.external_url || '',
       };
@@ -1023,6 +1052,7 @@
         mediaCount: null,
         isVerified: false,
         isPrivate: false,
+        followedByViewer: null,
         biography: '',
         externalUrl: '',
       };
@@ -1033,7 +1063,16 @@
   function parseFormattedCount(rawStr) {
     if (rawStr == null) return null;
     const s = String(rawStr).trim();
-    if (!s || /[kmbKMB]|bin|milyon/i.test(s)) return null;
+    if (!s) return null;
+    const abbr = s.match(/^([\d]+(?:[.,]\d+)?)\s*(b|bin|k|m|mn|milyon)$/i);
+    if (abbr) {
+      const num = parseFloat(abbr[1].replace(',', '.'));
+      if (Number.isNaN(num)) return null;
+      const unit = abbr[2].toLowerCase();
+      if (unit === 'b' || unit === 'bin' || unit === 'k') return Math.round(num * 1000);
+      if (unit === 'm' || unit === 'mn' || unit === 'milyon') return Math.round(num * 1000000);
+    }
+    if (/[a-zA-Z]/.test(s)) return null;
     const digits = s.replace(/[.,\s\u00a0]/g, '');
     return /^\d+$/.test(digits) ? Number(digits) : null;
   }
@@ -1045,20 +1084,59 @@
       if ((getDefaultUsername() || '').toLowerCase() !== lowerU) return null;
       let followerCount = null;
       let followingCount = null;
+
+      // 1) Bağlantı (a[href]) üzerinden okuma
       const links = Array.from(document.querySelectorAll('header a[href], main a[href]'));
       for (const a of links) {
         if (a.closest(`#${EXISTING_ID}`)) continue;
         const href = (a.getAttribute('href') || '').split('?')[0].replace(/\/+$/, '').toLowerCase();
         if (href.endsWith('/followers')) {
           const titled = a.querySelector('[title]') || (a.hasAttribute('title') ? a : null);
-          const parsed = parseFormattedCount(titled ? titled.getAttribute('title') : (a.textContent || '').match(/([\d.,]+)/)?.[1]);
+          const raw = titled ? titled.getAttribute('title') : (a.textContent || '').match(/([\d.,]+(?:\s*(?:b|bin|k|m|mn|milyon))?)/i)?.[1];
+          const parsed = parseFormattedCount(raw);
           if (parsed != null) followerCount = parsed;
         } else if (href.endsWith('/following')) {
           const titled = a.querySelector('[title]') || (a.hasAttribute('title') ? a : null);
-          const parsed = parseFormattedCount(titled ? titled.getAttribute('title') : (a.textContent || '').match(/([\d.,]+)/)?.[1]);
+          const raw = titled ? titled.getAttribute('title') : (a.textContent || '').match(/([\d.,]+(?:\s*(?:b|bin|k|m|mn|milyon))?)/i)?.[1];
+          const parsed = parseFormattedCount(raw);
           if (parsed != null) followingCount = parsed;
         }
       }
+
+      // 2) Başlık (header) metninden doğrudan okuma ("446 takipçi", "580 takip" / "446 followers", "580 following")
+      if (followerCount == null || followingCount == null) {
+        const headerEl = document.querySelector('main header') || document.querySelector('header');
+        if (headerEl && !headerEl.closest(`#${EXISTING_ID}`)) {
+          const headerText = (headerEl.innerText || headerEl.textContent || '').replace(/\s+/g, ' ');
+          if (followerCount == null) {
+            const mFlw = headerText.match(/([\d.,]+(?:\s*(?:b|bin|k|m|mn|milyon))?)\s*(?:takipçi|followers?)\b/i);
+            if (mFlw) followerCount = parseFormattedCount(mFlw[1]);
+          }
+          if (followingCount == null) {
+            const mFlwing = headerText.match(/([\d.,]+(?:\s*(?:b|bin|k|m|mn|milyon))?)\s*(?:takip(?!çi)|following)\b/i);
+            if (mFlwing) followingCount = parseFormattedCount(mFlwing[1]);
+          }
+        }
+      }
+
+      // 3) Meta description yedeği
+      if (followerCount == null || followingCount == null) {
+        const metaDesc =
+          document.querySelector('meta[name="description"]')?.getAttribute('content') ||
+          document.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
+          '';
+        if (metaDesc) {
+          if (followerCount == null) {
+            const mFlw = metaDesc.match(/([\d.,]+(?:\s*(?:b|bin|k|m|mn|milyon))?)\s*(?:takipçi|followers?)\b/i);
+            if (mFlw) followerCount = parseFormattedCount(mFlw[1]);
+          }
+          if (followingCount == null) {
+            const mFlwing = metaDesc.match(/([\d.,]+(?:\s*(?:b|bin|k|m|mn|milyon))?)\s*(?:takip(?!çi)|following)\b/i);
+            if (mFlwing) followingCount = parseFormattedCount(mFlwing[1]);
+          }
+        }
+      }
+
       return followerCount != null || followingCount != null ? { followerCount, followingCount } : null;
     } catch (_) {
       return null;
@@ -1066,13 +1144,15 @@
   }
 
   // ============================================================================
-  // INSTAGRAM REST & GRAPHQL API MOTORU (ANINDA 429 DURDURMA KORUMALI)
+  // INSTAGRAM REST & GRAPHQL API MOTORU (ANINDA 429 DURDURMA + GİZLİ HESAP DESTEĞİ)
   // ============================================================================
 
   async function fetchWithRetry(url, options = {}, maxRetries = 2) {
     const useScanSignal = Boolean(options._ignoreScanAbort !== true && state.isRunning && state.abortController);
+    const softRateLimit = Boolean(options._softRateLimit);
     const cleanOptions = { ...options };
     delete cleanOptions._ignoreScanAbort;
+    delete cleanOptions._softRateLimit;
     const headers = getAppHeaders(cleanOptions.headers || {});
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -1088,8 +1168,17 @@
           signal: useScanSignal && state.abortController ? state.abortController.signal : undefined,
         });
 
-        // HTTP 429 geldiğinde beklemeden anında durdur ve hata göster
+        const newClaim = res?.headers?.get?.('x-ig-set-www-claim');
+        if (newClaim && newClaim !== '0') {
+          cachedWWWClaim = newClaim;
+          try {
+            sessionStorage.setItem('www-claim-v2', newClaim);
+          } catch (_) {}
+        }
+
+        // HTTP 429 geldiğinde isteğe bağlı metadata çağrısı değilse anında durdur ve hata göster
         if (res.status === 429) {
+          if (softRateLimit) return res;
           notifyRateLimitError(url);
           if (useScanSignal) {
             throw new DOMException('HTTP 429 Rate Limit', 'AbortError');
@@ -1113,10 +1202,94 @@
     }
   }
 
+  async function fetchProfileViaWebInfo(cleanUsername, ignoreScanAbort = false) {
+    try {
+      const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(cleanUsername)}`;
+      const res = await fetchWithRetry(url, { _ignoreScanAbort: ignoreScanAbort, _softRateLimit: true }, 0);
+      if (res && res.ok) {
+        const json = await safeParseJson(res);
+        const u = json?.data?.user;
+        if (u && (u.id || u.pk)) {
+          return {
+            id: String(u.id || u.pk),
+            username: u.username || cleanUsername,
+            fullName: u.full_name || '',
+            profilePicUrl: u.profile_pic_url_hd || u.profile_pic_url || '',
+            followerCount: u.edge_followed_by?.count ?? u.follower_count ?? null,
+            followingCount: u.edge_follow?.count ?? u.following_count ?? null,
+            mediaCount: u.edge_owner_to_timeline_media?.count ?? u.media_count ?? null,
+            isVerified: Boolean(u.is_verified),
+            isPrivate: Boolean(u.is_private),
+            followedByViewer:
+              typeof u.followed_by_viewer === 'boolean'
+                ? u.followed_by_viewer
+                : typeof u.friendship_status?.following === 'boolean'
+                ? u.friendship_status.following
+                : null,
+            biography: u.biography || '',
+            externalUrl: u.external_url || '',
+          };
+        }
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') throw e;
+    }
+    return null;
+  }
+
+  async function fetchProfileViaUserInfoById(userId, fallbackUsername = '', ignoreScanAbort = false) {
+    // /api/v1/users/{id}/info/ web oturumlarında anında HTTP 429 döndürdüğü için devre dışı bırakıldı
+    return null;
+    if (!userId || !/^\d+$/.test(String(userId))) return null;
+    try {
+      const url = `https://www.instagram.com/api/v1/users/${encodeURIComponent(userId)}/info/`;
+      const res = await fetchWithRetry(url, { _ignoreScanAbort: ignoreScanAbort, _softRateLimit: true }, 0);
+      if (res && res.ok) {
+        const json = await safeParseJson(res);
+        const u = json?.user;
+        if (u && (u.pk || u.id)) {
+          return {
+            id: String(u.pk || u.id),
+            username: u.username || fallbackUsername,
+            fullName: u.full_name || '',
+            profilePicUrl: u.hd_profile_pic_url_info?.url || u.profile_pic_url || '',
+            followerCount: typeof u.follower_count === 'number' ? u.follower_count : null,
+            followingCount: typeof u.following_count === 'number' ? u.following_count : null,
+            mediaCount: typeof u.media_count === 'number' ? u.media_count : null,
+            isVerified: Boolean(u.is_verified),
+            isPrivate: Boolean(u.is_private),
+            followedByViewer: typeof u.friendship_status?.following === 'boolean' ? u.friendship_status.following : null,
+            biography: u.biography || '',
+            externalUrl: u.external_url || '',
+          };
+        }
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') throw e;
+    }
+    return null;
+  }
+
+  async function checkViewerFollowsUser(userId) {
+    if (!userId || !/^\d+$/.test(String(userId))) return null;
+    try {
+      const url = `https://www.instagram.com/api/v1/friendships/show/${encodeURIComponent(userId)}/`;
+      const res = await fetchWithRetry(url, { _softRateLimit: true }, 0);
+      if (res && res.ok) {
+        const json = await safeParseJson(res);
+        if (typeof json?.following === 'boolean') return json.following;
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') throw e;
+    }
+    return null;
+  }
+
   async function resolveUserProfile(usernameInput, options = {}) {
     const cleanUsername = String(usernameInput || '').trim().replace(/^@/, '');
     const cookieUserId = getCookie('ds_user_id');
     const viewer = getLoggedInViewerFromDOM();
+    const ignoreScanAbort = Boolean(options.forceLiveBio);
 
     if (!cleanUsername && cookieUserId) {
       return {
@@ -1129,6 +1302,7 @@
         mediaCount: null,
         isVerified: false,
         isPrivate: false,
+        followedByViewer: null,
         biography: '',
         externalUrl: '',
       };
@@ -1137,21 +1311,32 @@
     if (!cleanUsername) throw new Error('Geçerli bir kullanıcı adı girin.');
 
     const lower = cleanUsername.toLowerCase();
-    if (!options.forceLiveBio && state.profileDetailsCache.has(lower)) {
-      return state.profileDetailsCache.get(lower);
+    const cached = !options.forceLiveBio ? state.profileDetailsCache.get(lower) : null;
+    if (cached && cached.id && (!options.requireCounts || (cached.followerCount != null && cached.followingCount != null))) {
+      return cached;
     }
 
-    // 1. ADIM (0 Ağ İsteği): Sayfa İçi DOM / Script JSON Taraması
+    let candidate = null;
+
+    // 1. ADIM (0 Ağ İsteği): Sayfa İçi DOM / Script JSON Taraması + Ekrandaki Sayaçlar
     const domProfile = extractStrictProfileFromScripts(cleanUsername);
     if (domProfile && domProfile.id) {
-      state.profileDetailsCache.set(lower, domProfile);
-      if (!options.forceLiveBio || domProfile.biography || domProfile.followerCount != null) {
+      const domCounts = extractVisibleCountsFromDOM(cleanUsername);
+      if (domProfile.followerCount == null && domCounts?.followerCount != null) {
+        domProfile.followerCount = domCounts.followerCount;
+      }
+      if (domProfile.followingCount == null && domCounts?.followingCount != null) {
+        domProfile.followingCount = domCounts.followingCount;
+      }
+      candidate = domProfile;
+      if (!options.forceLiveBio) {
+        state.profileDetailsCache.set(lower, domProfile);
         return domProfile;
       }
     }
 
     // 2. ADIM (0 Ağ İsteği): Kendi Hesabımız veya Önbellekteki Hesap
-    if (!options.forceLiveBio) {
+    if (!options.forceLiveBio && !options.requireCounts) {
       if (viewer && viewer.id && viewer.username && viewer.username.toLowerCase() === lower) {
         const selfProfile = {
           id: String(viewer.id),
@@ -1163,6 +1348,7 @@
           mediaCount: null,
           isVerified: false,
           isPrivate: false,
+          followedByViewer: null,
           biography: '',
           externalUrl: '',
         };
@@ -1181,13 +1367,31 @@
           mediaCount: null,
           isVerified: false,
           isPrivate: false,
+          followedByViewer: null,
           biography: '',
           externalUrl: '',
         };
       }
     }
 
-    // 3. ADIM: GraphQL TIMELINE_DOC_ID
+    // 3. ADIM: Web Profile Info REST Uç Noktası (Gizli hesaplarda kesin takipçi/takip sayısı ve isPrivate verir)
+    const webInfoProfile = await fetchProfileViaWebInfo(cleanUsername, ignoreScanAbort);
+    if (webInfoProfile && webInfoProfile.id) {
+      state.profileDetailsCache.set(lower, webInfoProfile);
+      return webInfoProfile;
+    }
+
+    // 4. ADIM: ID elimizde varsa /api/v1/users/{id}/info/ ile sayıları ve gizlilik durumunu tamamla
+    if (candidate && candidate.id) {
+      const infoById = await fetchProfileViaUserInfoById(candidate.id, cleanUsername, ignoreScanAbort);
+      if (infoById) {
+        const merged = { ...candidate, ...infoById };
+        state.profileDetailsCache.set(lower, merged);
+        return merged;
+      }
+    }
+
+    // 5. ADIM: GraphQL TIMELINE_DOC_ID
     try {
       const variables = {
         data: { count: 1, include_relationship_info: true },
@@ -1195,7 +1399,7 @@
         __relay_internal__pv__PolarisFeedShareMenurelayprovider: false,
       };
       const gqlUrl = `https://www.instagram.com/graphql/query/?doc_id=${TIMELINE_DOC_ID}&variables=${encodeURIComponent(JSON.stringify(variables))}`;
-      const res = await fetchWithRetry(gqlUrl, { _ignoreScanAbort: Boolean(options.forceLiveBio) }, 0);
+      const res = await fetchWithRetry(gqlUrl, { _ignoreScanAbort: ignoreScanAbort }, 0);
       if (res && res.ok) {
         const json = await safeParseJson(res);
         const edges = json?.data?.xdt_api__v1__feed__user_timeline_graphql_connection?.edges;
@@ -1211,22 +1415,26 @@
             mediaCount: null,
             isVerified: Boolean(owner.is_verified),
             isPrivate: Boolean(owner.is_private),
+            followedByViewer: null,
             biography: '',
             externalUrl: '',
           };
-          state.profileDetailsCache.set(lower, profile);
-          if (!options.forceLiveBio) return profile;
+          const enriched = await fetchProfileViaUserInfoById(profile.id, cleanUsername, ignoreScanAbort);
+          const finalProfile = enriched ? { ...profile, ...enriched } : profile;
+          state.profileDetailsCache.set(lower, finalProfile);
+          if (!options.forceLiveBio) return finalProfile;
+          candidate = finalProfile;
         }
       }
     } catch (e) {
       if (e.name === 'AbortError') throw e;
     }
 
-    // 4. ADIM: Profil HTML Sayfasından JSON/ID Ayıklama
+    // 6. ADIM: Profil HTML Sayfasından JSON/ID Ayıklama
     try {
       const pageRes = await fetch(`https://www.instagram.com/${encodeURIComponent(cleanUsername)}/`, {
         credentials: 'include',
-        signal: !options.forceLiveBio && state.isRunning && state.abortController ? state.abortController.signal : undefined,
+        signal: !ignoreScanAbort && state.isRunning && state.abortController ? state.abortController.signal : undefined,
       });
       if (pageRes && pageRes.ok) {
         const htmlText = await pageRes.text();
@@ -1237,6 +1445,7 @@
           htmlText.match(/"pk"\s*:\s*"(\d+)"[^}]{0,200}"username"\s*:\s*"([^"]+)"/i);
         const fCountMatch = htmlText.match(/"edge_followed_by"\s*:\s*\{\s*"count"\s*:\s*(\d+)/);
         const flwCountMatch = htmlText.match(/"edge_follow"\s*:\s*\{\s*"count"\s*:\s*(\d+)/);
+        const privMatch = htmlText.match(/"is_private"\s*:\s*(true|false)/);
         const bioMatch = htmlText.match(/"biography"\s*:\s*"([^"]*)"/);
         if (idMatch && idMatch[1]) {
           let parsedBio = '';
@@ -1256,45 +1465,27 @@
             followingCount: flwCountMatch ? Number(flwCountMatch[1]) : null,
             mediaCount: null,
             isVerified: false,
-            isPrivate: false,
+            isPrivate: privMatch ? privMatch[1] === 'true' : false,
+            followedByViewer: null,
             biography: parsedBio,
             externalUrl: '',
           };
-          state.profileDetailsCache.set(lower, profile);
-          return profile;
+          const enriched =
+            profile.followerCount == null || profile.followingCount == null
+              ? await fetchProfileViaUserInfoById(profile.id, cleanUsername, ignoreScanAbort)
+              : null;
+          const finalProfile = enriched ? { ...profile, ...enriched } : profile;
+          state.profileDetailsCache.set(lower, finalProfile);
+          return finalProfile;
         }
       }
     } catch (e) {
       if (e.name === 'AbortError') throw e;
     }
 
-    // 5. ADIM: Web Profile Info REST Uç Noktası
-    try {
-      const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(cleanUsername)}`;
-      const res = await fetchWithRetry(url, { _ignoreScanAbort: Boolean(options.forceLiveBio) }, 0);
-      if (res && res.ok) {
-        const json = await safeParseJson(res);
-        const u = json?.data?.user;
-        if (u && (u.id || u.pk)) {
-          const profile = {
-            id: String(u.id || u.pk),
-            username: u.username || cleanUsername,
-            fullName: u.full_name || '',
-            profilePicUrl: u.profile_pic_url_hd || u.profile_pic_url || '',
-            followerCount: u.edge_followed_by?.count ?? u.follower_count ?? 0,
-            followingCount: u.edge_follow?.count ?? u.following_count ?? 0,
-            mediaCount: u.edge_owner_to_timeline_media?.count ?? u.media_count ?? 0,
-            isVerified: Boolean(u.is_verified),
-            isPrivate: Boolean(u.is_private),
-            biography: u.biography || '',
-            externalUrl: u.external_url || '',
-          };
-          state.profileDetailsCache.set(lower, profile);
-          return profile;
-        }
-      }
-    } catch (e) {
-      if (e.name === 'AbortError') throw e;
+    if (candidate && candidate.id) {
+      state.profileDetailsCache.set(lower, candidate);
+      return candidate;
     }
 
     throw new Error(`"@${cleanUsername}" profili çözümlenemedi. Kullanıcı adını kontrol edin veya "⚡ Kendi Hesabımı Tara" butonunu kullanın.`);
@@ -1309,7 +1500,7 @@
 
   function addUserToMap(raw, sharedMap, seenUsernames) {
     if (!raw || typeof raw !== 'object') return false;
-    const uid = String(raw.pk || raw.id || '').trim();
+    const uid = String(raw.pk || raw.id || raw.pk_id || raw.strong_id__ || '').trim();
     const uname = String(raw.username || '').trim();
     const unameLow = uname.toLowerCase();
     if (!uid || !uname) return false;
@@ -1328,15 +1519,30 @@
     return true;
   }
 
-  // 1. YÖNTEM: REST API ile Takipçi / Takip Edilen Listesi Çekme (Canlı Güncellemeli + Çift Yönlü Sıralama)
+  function extractUsersFromRestPayload(data) {
+    const out = [];
+    if (Array.isArray(data?.users)) {
+      out.push(...data.users);
+    }
+    if (Array.isArray(data?.groups)) {
+      for (const g of data.groups) {
+        if (Array.isArray(g?.users)) out.push(...g.users);
+      }
+    }
+    return out;
+  }
+
+  // 1. YÖNTEM: REST API ile Takipçi / Takip Edilen Listesi Çekme (Canlı Güncellemeli + Gizli Hesap Uyumlu)
   async function fetchViaRestApi(userId, type, expectedTotal, progressStart, progressEnd, sharedMap, seenUsernames, onPageUpdate, passOpts = {}) {
     const visitedCursors = new Set();
     let maxId = '';
     let page = 0;
     let emptyPages = 0;
     let consecutiveZeroNew = 0;
-    const pageSize = passOpts.count || (type === 'followers' ? 24 : 24);
+    const pageSize = passOpts.count || (type === 'followers' ? REST_FOLLOWERS_PAGE_SIZE : REST_FOLLOWING_PAGE_SIZE);
     const useSurface = passOpts.useSurface ?? false;
+    const useRankToken = Boolean(passOpts.useRankToken);
+    const rankToken = useRankToken ? generateRankToken(userId) : '';
     const orderParam = passOpts.order ? `&order=${encodeURIComponent(passOpts.order)}` : '';
     const isSecondaryPass = Boolean(passOpts.isSecondary);
 
@@ -1345,7 +1551,8 @@
       if (typeof expectedTotal === 'number' && expectedTotal > 0 && sharedMap.size >= expectedTotal) break;
 
       const surfaceParam = useSurface ? '&search_surface=follow_list_page' : '';
-      const url = `https://www.instagram.com/api/v1/friendships/${encodeURIComponent(userId)}/${type}/?count=${pageSize}${surfaceParam}${orderParam}${maxId ? `&max_id=${encodeURIComponent(maxId)}` : ''}`;
+      const rankParam = rankToken ? `&rank_token=${encodeURIComponent(rankToken)}` : '';
+      const url = `https://www.instagram.com/api/v1/friendships/${encodeURIComponent(userId)}/${type}/?count=${pageSize}${surfaceParam}${orderParam}${rankParam}${maxId ? `&max_id=${encodeURIComponent(maxId)}` : ''}`;
       const res = await fetchWithRetry(url, {}, 1);
       if (!res || !res.ok) {
         throw new Error(`REST API ${type} hatası (${res?.status || 'Ağ'})`);
@@ -1356,7 +1563,7 @@
         throw new Error(`REST API ${type} geçersiz yanıt döndürdü (${data?.message || 'oturum doğrulaması gerekebilir'})`);
       }
 
-      const users = Array.isArray(data?.users) ? data.users : [];
+      const users = extractUsersFromRestPayload(data);
       let addedNow = 0;
       for (const u of users) {
         if (addUserToMap(u, sharedMap, seenUsernames)) addedNow++;
@@ -1364,14 +1571,14 @@
 
       if (users.length === 0) {
         emptyPages++;
-        if (emptyPages >= 2) break;
+        if (emptyPages >= 3) break;
       } else {
         emptyPages = 0;
         if (isSecondaryPass) {
           if (addedNow === 0) {
             consecutiveZeroNew++;
-            // İkincil geçişte (ör. en eskiden) mevcut listeyle tamamen örtüşmeye başladıysa gereksiz istek atma
-            if (consecutiveZeroNew >= 6) break;
+            const zeroLimit = Math.max(15, Math.ceil(sharedMap.size / Math.max(1, pageSize)) + 4);
+            if (consecutiveZeroNew >= zeroLimit) break;
           } else {
             consecutiveZeroNew = 0;
           }
@@ -1392,7 +1599,7 @@
       }
 
       let nextCursor = data?.next_max_id != null && String(data.next_max_id) !== '' ? String(data.next_max_id) : '';
-      if (!nextCursor && data?.big_list === true && users.length > 0 && (maxId === '' || /^\d+$/.test(maxId))) {
+      if (!nextCursor && (data?.big_list === true || data?.has_more === true) && users.length > 0 && (maxId === '' || /^\d+$/.test(maxId))) {
         const nextNum = (maxId === '' ? 0 : Number(maxId)) + users.length;
         nextCursor = String(nextNum);
       }
@@ -1424,9 +1631,11 @@
 
     while (hasNextPage) {
       if (state.abortController?.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      if (typeof expectedTotal === 'number' && expectedTotal > 0 && sharedMap.size >= expectedTotal) break;
+
       const variables = {
         id: String(userId),
-        include_reel: false,
+        include_reel: true,
         fetch_mutual: false,
         first: GQL_PAGE_SIZE,
         after: afterCursor,
@@ -1476,10 +1685,193 @@
     return Array.from(sharedMap.values());
   }
 
-  // Akıllı Veri Çekme Motoru (REST Geçiş 1 -> Eksikse REST Geçiş 2 -> GraphQL Tamamlama)
-  async function fetchFriendshipList(targetUserId, listType, countHint, startProgress, endProgress, onPageUpdate) {
+  // 3. YÖNTEM: Takip Edilen (Gizli / Açık) Hesaplarda Eksik Kalanları 1-Harf + Doygun 2-Harf Arama Taramasıyla (?query=) Tamamlama
+  async function fetchSingleQueryPrefix(userId, type, q, expectedTotal, sharedMap, seenUsernames, onPageUpdate) {
+    let maxId = '';
+    let page = 0;
+    let totalMatched = 0;
+    let totalAdded = 0;
+    const visited = new Set();
+
+    while (page < 4) {
+      if (state.lastRateLimitError || state.abortController?.signal.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+      if (typeof expectedTotal === 'number' && expectedTotal > 0 && sharedMap.size >= expectedTotal) {
+        break;
+      }
+
+      const url = `https://www.instagram.com/api/v1/friendships/${encodeURIComponent(userId)}/${type}/?count=50&query=${encodeURIComponent(q)}&search_surface=follow_list_page${maxId ? `&max_id=${encodeURIComponent(maxId)}` : ''}`;
+      const res = await fetchWithRetry(url, {}, 0);
+      if (!res || !res.ok) break;
+
+      const data = await safeParseJson(res);
+      const users = extractUsersFromRestPayload(data);
+      totalMatched += users.length;
+
+      let addedNow = 0;
+      for (const u of users) {
+        if (addUserToMap(u, sharedMap, seenUsernames)) addedNow++;
+      }
+      if (addedNow > 0) {
+        totalAdded += addedNow;
+        if (typeof onPageUpdate === 'function') {
+          onPageUpdate(Array.from(sharedMap.values()));
+        }
+      }
+
+      page++;
+      const nextCursor = data?.next_max_id != null && String(data.next_max_id) !== '' ? String(data.next_max_id) : '';
+      if (!nextCursor || visited.has(nextCursor) || users.length === 0) break;
+      visited.add(nextCursor);
+      maxId = nextCursor;
+      await sleep(Math.max(350, Math.round(getRateLimitDelay('scan') * 0.6)));
+    }
+
+    return { matched: totalMatched, added: totalAdded };
+  }
+
+  async function fetchViaQueryPrefixSweep(userId, type, expectedTotal, progressStart, progressEnd, sharedMap, seenUsernames, onPageUpdate) {
+    const primaryChars = 'aeirnlkstmoudbychgpzvfwjxq0123456789_.çğıöşü'.split('');
+    const secondChars = 'aeiournlkstmydbchgpzvfwjxq0123456789_.'.split('');
+    const label = type === 'followers' ? 'Takipçiler' : 'Takip Edilenler';
+    const cfg = SPEED_CONFIGS[state.speedMode] || SPEED_CONFIGS.safe;
+    const concurrency = Math.max(1, cfg.scanConcurrency || 2);
+    let recoveredTotal = 0;
+    const saturatedPrefixes = [];
+
+    addLog(
+      `🔎 ${label} eksik kaldı (${sharedMap.size}/${expectedTotal ?? '?'}). Hızlı 1-harf + 2-harf arama tamamlaması (x${concurrency} paralel) başlatılıyor...`,
+      'info'
+    );
+
+    for (let i = 0; i < primaryChars.length; i += concurrency) {
+      if (state.lastRateLimitError || state.abortController?.signal.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+      if (typeof expectedTotal === 'number' && expectedTotal > 0 && sharedMap.size >= expectedTotal) {
+        break;
+      }
+
+      const batch = primaryChars.slice(i, i + concurrency);
+      const results = await Promise.all(
+        batch.map(async (q) => {
+          try {
+            const resInfo = await fetchSingleQueryPrefix(userId, type, q, expectedTotal, sharedMap, seenUsernames, onPageUpdate);
+            return { q, ...resInfo };
+          } catch (err) {
+            if (err.name === 'AbortError') throw err;
+            return { q, matched: 0, added: 0 };
+          }
+        })
+      );
+
+      for (const r of results) {
+        recoveredTotal += r.added;
+        if (r.matched >= 18 && /^[a-z0-9]$/.test(r.q)) {
+          saturatedPrefixes.push(r.q);
+        }
+      }
+
+      const doneCount = Math.min(primaryChars.length, i + batch.length);
+      const ratio = doneCount / primaryChars.length;
+      const currentPct = Math.round(progressStart + ratio * Math.max(1, (progressEnd - progressStart) * 0.55));
+      updateProgress(currentPct);
+      updateStatus(
+        `${label} eksikler tamamlanıyor ("${batch.join(',')}"): ${sharedMap.size}${expectedTotal ? ` / ${expectedTotal}` : ''} (+${recoveredTotal})`
+      );
+
+      if (doneCount < primaryChars.length && !(typeof expectedTotal === 'number' && expectedTotal > 0 && sharedMap.size >= expectedTotal)) {
+        await sleep(Math.max(250, Math.round(getRateLimitDelay('scan') * 0.6)));
+      }
+    }
+
+    // 2. Aşama: Hâlâ eksik varsa TÜM doygun harfler arasında dönüşümlü (round-robin) 2 karakterli derin arama yap
+    const stillMissing =
+      !state.lastRateLimitError &&
+      saturatedPrefixes.length > 0 &&
+      (expectedTotal == null || (typeof expectedTotal === 'number' && sharedMap.size < expectedTotal));
+
+    if (stillMissing) {
+      const deepQueue = [];
+      for (const ch2 of secondChars) {
+        for (const ch1 of saturatedPrefixes) {
+          deepQueue.push(`${ch1}${ch2}`);
+        }
+      }
+      const maxDeepQueries = Math.min(deepQueue.length, 150);
+      addLog(
+        `🔍 ${label} için ${saturatedPrefixes.length} doygun harfte hızlı 2 karakterli derin arama (en fazla ${maxDeepQueries} sorgu, x${concurrency} paralel)...`,
+        'info'
+      );
+
+      let deepAdded = 0;
+      let consecutiveEmptyDeep = 0;
+      for (let i = 0; i < maxDeepQueries; i += concurrency) {
+        if (state.lastRateLimitError || state.abortController?.signal.aborted) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+        if (typeof expectedTotal === 'number' && expectedTotal > 0 && sharedMap.size >= expectedTotal) {
+          break;
+        }
+
+        const batch = deepQueue.slice(i, Math.min(maxDeepQueries, i + concurrency));
+        const results = await Promise.all(
+          batch.map(async (q2) => {
+            try {
+              const resInfo = await fetchSingleQueryPrefix(userId, type, q2, expectedTotal, sharedMap, seenUsernames, onPageUpdate);
+              return { q2, ...resInfo };
+            } catch (err) {
+              if (err.name === 'AbortError') throw err;
+              return { q2, matched: 0, added: 0 };
+            }
+          })
+        );
+
+        let batchAdded = 0;
+        for (const r of results) {
+          batchAdded += r.added;
+        }
+        if (batchAdded > 0) {
+          recoveredTotal += batchAdded;
+          deepAdded += batchAdded;
+          consecutiveEmptyDeep = 0;
+        } else {
+          consecutiveEmptyDeep += batch.length;
+        }
+
+        const doneCount = Math.min(maxDeepQueries, i + batch.length);
+        const ratio = doneCount / maxDeepQueries;
+        const currentPct = Math.round(progressStart + (progressEnd - progressStart) * (0.55 + ratio * 0.45));
+        updateProgress(currentPct);
+        updateStatus(
+          `${label} derin arama ("${batch.join(',')}"): ${sharedMap.size}${expectedTotal ? ` / ${expectedTotal}` : ''} (+${recoveredTotal})`
+        );
+
+        if (consecutiveEmptyDeep >= (expectedTotal == null ? 24 : 36)) break;
+        if (doneCount < maxDeepQueries && !(typeof expectedTotal === 'number' && expectedTotal > 0 && sharedMap.size >= expectedTotal)) {
+          await sleep(Math.max(250, Math.round(getRateLimitDelay('scan') * 0.6)));
+        }
+      }
+
+      if (deepAdded > 0) {
+        addLog(`✅ 2 karakterli derin arama ile +${deepAdded} ek ${label.toLowerCase()} kurtarıldı.`, 'success');
+      }
+    }
+
+    if (recoveredTotal > 0) {
+      addLog(`✅ Arama tamamlaması ile toplam +${recoveredTotal} eksik ${label.toLowerCase()} kurtarıldı (Toplam: ${sharedMap.size}/${expectedTotal ?? '?'}).`, 'success');
+    }
+
+    return Array.from(sharedMap.values());
+  }
+
+  // Akıllı Veri Çekme Motoru (REST -> İkincil REST -> GraphQL -> 1/2-Harfli Derin Arama Tamamlama)
+  async function fetchFriendshipList(targetUserId, listType, countHint, startProgress, endProgress, onPageUpdate, options = {}) {
     const sharedMap = new Map();
     const seenUsernames = new Set();
+    const isSelf = Boolean(options.isScanningSelf);
+    const label = listType === 'followers' ? 'Takipçiler' : 'Takip Edilenler';
 
     const getExp = () =>
       listType === 'followers'
@@ -1495,7 +1887,7 @@
     };
 
     try {
-      // 1. Geçiş: Standart Web REST (takip edilenlerde en yeni sıradan başlar)
+      // 1. Geçiş: Kendi hesabımızda order=date_followed_latest çalışır; başka hesapta order ve rank_token GÖNDERİLMEZ
       await fetchViaRestApi(
         targetUserId,
         listType,
@@ -1506,16 +1898,19 @@
         seenUsernames,
         onPageUpdate,
         {
-          count: 24,
-          useSurface: listType === 'followers',
-          order: listType === 'following' ? 'date_followed_latest' : '',
+          count: isSelf ? 24 : REST_FOLLOWERS_PAGE_SIZE,
+          useSurface: !isSelf || listType === 'followers',
+          useRankToken: false,
+          order: isSelf && listType === 'following' ? 'date_followed_latest' : '',
         }
       );
+      addLog(`📊 ${label} — REST Geçiş 1: ${sharedMap.size}${getExp() ? ` / ${getExp()}` : ''} kişi.`, 'info');
 
-      // 2. Geçiş: Eksik kaldıysa takip edilenlerde TERS yönden (en eskiden) çekerek alt kısmı tamamla
+      // 2. Geçiş: Eksik kaldıysa alternatif REST geçişi
       const exp1 = getExp();
       if (!state.lastRateLimitError && (exp1 == null || sharedMap.size < exp1)) {
-        if (listType === 'following') {
+        const beforePass2 = sharedMap.size;
+        if (isSelf && listType === 'following') {
           addLog(`ℹ️ Takip Edilenler ters sıradan (en eskiden) tamamlanıyor (${sharedMap.size}/${exp1 ?? '?'})...`, 'info');
           await fetchViaRestApi(
             targetUserId,
@@ -1528,7 +1923,6 @@
             onPageUpdate,
             { count: 24, useSurface: false, order: 'date_followed_earliest', isSecondary: true }
           );
-          // Hâlâ eksikse varsayılan (sıralamasız) geçişi de dene
           if (!state.lastRateLimitError && typeof exp1 === 'number' && sharedMap.size < exp1) {
             await fetchViaRestApi(
               targetUserId,
@@ -1542,8 +1936,11 @@
               { count: 12, useSurface: true, order: '', isSecondary: true }
             );
           }
-        } else if (typeof exp1 === 'number' && sharedMap.size < exp1) {
-          addLog(`ℹ️ Takipçiler alternatif REST geçişiyle tamamlanıyor (${sharedMap.size}/${exp1})...`, 'info');
+        } else {
+          addLog(
+            `ℹ️ ${label} alternatif REST geçişiyle (count=50) tamamlanıyor (${sharedMap.size}/${exp1 ?? '?'})...`,
+            'info'
+          );
           await fetchViaRestApi(
             targetUserId,
             listType,
@@ -1553,8 +1950,11 @@
             sharedMap,
             seenUsernames,
             onPageUpdate,
-            { count: 12, useSurface: false, isSecondary: true }
+            { count: 50, useSurface: false, useRankToken: false, order: '', isSecondary: true }
           );
+        }
+        if (sharedMap.size > beforePass2) {
+          addLog(`📊 ${label} — REST Geçiş 2: +${sharedMap.size - beforePass2} yeni kişi (Toplam: ${sharedMap.size}).`, 'info');
         }
       }
     } catch (err) {
@@ -1574,9 +1974,36 @@
         if (!state.lastRateLimitError && isMissing()) {
           await fetchViaGraphQL(targetUserId, listType, getExp(), startProgress, endProgress, sharedMap, seenUsernames, onPageUpdate, true);
         }
+        if (sharedMap.size > beforeGql) {
+          addLog(`📊 ${label} — GraphQL: +${sharedMap.size - beforeGql} yeni kişi (Toplam: ${sharedMap.size}).`, 'info');
+        }
       } catch (err) {
         if (err.name === 'AbortError') throw err;
         if (sharedMap.size === 0) throw err;
+      }
+    }
+
+    // 4. Geçiş: Hem kendi hesabınızda hem başka hesaplarda REST ve GraphQL eksik kaldıysa (veya beklenen sayı bilinmiyorsa) 1-harf + 2-harf arama tamamlaması
+    const expAfterGql = getExp();
+    const shouldRunQuerySweep =
+      !state.lastRateLimitError &&
+      (expAfterGql == null || (typeof expAfterGql === 'number' && expAfterGql > 0 && sharedMap.size < expAfterGql));
+
+    if (shouldRunQuerySweep) {
+      try {
+        await fetchViaQueryPrefixSweep(
+          targetUserId,
+          listType,
+          expAfterGql,
+          Math.max(startProgress, endProgress - 10),
+          endProgress,
+          sharedMap,
+          seenUsernames,
+          onPageUpdate
+        );
+      } catch (err) {
+        if (err.name === 'AbortError') throw err;
+        addLog(`⚠️ Arama tamamlaması sırasında uyarı: ${err.message}`, 'warn');
       }
     }
 
@@ -2112,11 +2539,19 @@
     overlay.innerHTML = `
       <div id="igfc-changelog-modal" class="igfc-submodal-card">
         <div class="igfc-submodal-header">
-          <h3>🚀 Sürüm Geçmişi (v10.7 Pro Ultimate)</h3>
+          <h3>🚀 Sürüm Geçmişi (v10.15 Pro Ultimate)</h3>
           <button id="igfc-changelog-close-btn" class="igfc-win-btn close" title="Kapat">✕</button>
         </div>
         <div class="igfc-submodal-body">
           <ul class="igfc-changelog-list">
+            <li><strong>v10.15 Pro:</strong> Profil üstündeki takipçi/takip sayılarının (<code>446 takipçi / 580 takip</code>) DOM'dan okunamaması (? görünmesi) ve bu yüzden hedefe ulaşıldıktan sonra gereksiz derin arama yapılıp HTTP 429'a düşülmesi giderildi; derin arama kotası 429 korumalı hale getirildi.</li>
+            <li><strong>v10.14 Pro:</strong> Başka hesap tarandığında üst kart ve sekme başlıkları dinamik olarak değişiyor (Onu Takip Etmeyen / Onun Takip Etmediği / Hesabın Takipçileri / Takip Ettikleri), REST 2. geçişteki erken durma hatası düzeltildi ve paralel arama gruplarıyla tarama 2–3 kat hızlandırıldı.</li>
+            <li><strong>v10.13 Pro:</strong> Kendi hesabınızda beklenen sayı DOM'da bulunamadığında (ör. ana sayfadan veya başka profilden tarama başlatıldığında) derin arama tamamlamasının atlanması sorunu giderildi; kendi hesabınızda da beklenen sayılar otomatik alınıp eksikler tamamlanıyor.</li>
+            <li><strong>v10.12 Pro:</strong> 1-harf + 2-harf derin arama tamamlama motoru artık kendi hesabınızda eksik kaldığında da otomatik devreye giriyor.</li>
+            <li><strong>v10.11 Pro:</strong> Gizli hesaplarda kalan son birkaç eksik hesabı da yakalamak için Türkçe karakterler (<code>ç, ğ, ı, ö, ş, ü</code>) eklendi, doygunluk eşiği 40'tan 25'e düşürüldü ve tüm doygun harfler arasında dönüşümlü (round-robin) 2 karakterli derin arama eklendi.</li>
+            <li><strong>v10.10 Pro:</strong> Tarama başında anında 429/404 hatasına yol açan <code>/api/v1/users/{id}/info/</code> çağrısı kaldırıldı; profil ID ve sayıları önce 0 ağ isteğiyle DOM'dan alınıyor, isteğe bağlı profil bilgi çağrıları artık taramayı durdurmuyor.</li>
+            <li><strong>v10.9 Pro:</strong> Takip edilen tüm (gizli ve açık) hesaplarda eksik veri gelmesini gidermek için geçersiz <code>rank_token</code> kaldırıldı, dinamik <code>X-IG-WWW-Claim</code> yenileme eklendi, Türkçe/İngilizce kısaltılmış sayaç (<code>1,2 B</code> / <code>1.2K</code>) ayrıştırması eklendi ve kırpılan listeler için <code>next_max_id</code> sayfalamalı + doygun harflerde otomatik 2 harfli derin <code>?query=</code> tamamlama motoru eklendi.</li>
+            <li><strong>v10.8 Pro:</strong> Takip edilen gizli hesaplarda eksik veri gelme sorunu düzeltildi: geçersiz <code>order=date_followed_*</code> parametresi başka hesaplarda devre dışı bırakıldı, <code>X-IG-WWW-Claim</code> &amp; <code>X-ASBD-ID</code> başlıkları ve <code>rank_token</code> eklendi, profil sayıları kesinleştirildi ve kırpılan listeler için otomatik <code>?query=a..z,0..9</code> tamamlama motoru eklendi.</li>
             <li><strong>v10.7 Pro:</strong> Başka profil tararken kendi hesabını tarama hatası düzeltildi, Durdur sonrası AbortError kilitlenmesi giderildi, HTTP 429'da anında durdurma + hata şeridi eklendi, O(N) hızlı liste çizimi ve sayfalama eklendi.</li>
             <li><strong>v10.2 Pro:</strong> 429 hız sınırı koruması, Son Takip Kişisini Çıkart sihirbazı, Karşılaştırma Modalı ve Ayarlar Modalı tamamlandı.</li>
           </ul>
@@ -3296,7 +3731,7 @@
           <div class="igfc-header-top">
             <div class="igfc-title">
               <span>📸 IG Follow Checker</span>
-              <button id="igfc-changelog-btn" class="igfc-badge" title="Sürüm Geçmişi ve Yenilikler">v10.7 Pro</button>
+              <button id="igfc-changelog-btn" class="igfc-badge" title="Sürüm Geçmişi ve Yenilikler">v10.15 Pro</button>
               <span id="igfc-quota-badge" class="igfc-quota-pill igfc-hide-on-min">Günlük Kota: 0/150</span>
               <span id="igfc-cache-info" class="igfc-cache-info igfc-hide-on-min" style="font-size:11.5px;color:var(--text-secondary);"></span>
             </div>
@@ -3342,32 +3777,32 @@
 
         <div id="igfc-body-wrap" class="igfc-body-wrap">
           <div class="igfc-stats-row">
-            <div class="igfc-stat-box active" data-stat-tab="nonFollowers" title="Seni takip etmeyenleri göster">
-              <span class="igfc-stat-label">Takip Etmeyen</span>
+            <div id="igfc-box-nonFollowers" class="igfc-stat-box active" data-stat-tab="nonFollowers" title="Seni takip etmeyenleri göster">
+              <span id="igfc-lbl-nonFollowers" class="igfc-stat-label">Takip Etmeyen</span>
               <span id="igfc-stat-nonfollowers" class="igfc-stat-value">0</span>
             </div>
-            <div class="igfc-stat-box" data-stat-tab="suspicious" title="Şüpheli / Bot hesapları göster">
-              <span class="igfc-stat-label">Şüpheli / Bot</span>
+            <div id="igfc-box-suspicious" class="igfc-stat-box" data-stat-tab="suspicious" title="Şüpheli / Bot hesapları göster">
+              <span id="igfc-lbl-suspicious" class="igfc-stat-label">Şüpheli / Bot</span>
               <span id="igfc-stat-suspicious" class="igfc-stat-value">0</span>
             </div>
-            <div class="igfc-stat-box" data-stat-tab="fans" title="Senin takip etmediklerini göster">
-              <span class="igfc-stat-label">Takip Etmediğin</span>
+            <div id="igfc-box-fans" class="igfc-stat-box" data-stat-tab="fans" title="Senin takip etmediklerini göster">
+              <span id="igfc-lbl-fans" class="igfc-stat-label">Takip Etmediğin</span>
               <span id="igfc-stat-fans" class="igfc-stat-value">0</span>
             </div>
-            <div class="igfc-stat-box" data-stat-tab="mutuals" title="Karşılıklı takipleştiklerini göster">
-              <span class="igfc-stat-label">Karşılıklı</span>
+            <div id="igfc-box-mutuals" class="igfc-stat-box" data-stat-tab="mutuals" title="Karşılıklı takipleştiklerini göster">
+              <span id="igfc-lbl-mutuals" class="igfc-stat-label">Karşılıklı</span>
               <span id="igfc-stat-mutuals" class="igfc-stat-value">0</span>
             </div>
-            <div class="igfc-stat-box" data-stat-tab="lostFollowers" title="Son taramadan beri takipten çıkanlar">
-              <span class="igfc-stat-label">Yeni Çıkanlar</span>
+            <div id="igfc-box-lostFollowers" class="igfc-stat-box" data-stat-tab="lostFollowers" title="Son taramadan beri takipten çıkanlar">
+              <span id="igfc-lbl-lostFollowers" class="igfc-stat-label">Yeni Çıkanlar</span>
               <span id="igfc-stat-lost" class="igfc-stat-value">0</span>
             </div>
-            <div class="igfc-stat-box" data-stat-tab="allFollowers" title="Tüm takipçilerini göster">
-              <span class="igfc-stat-label">Tüm Takipçiler</span>
+            <div id="igfc-box-allFollowers" class="igfc-stat-box" data-stat-tab="allFollowers" title="Tüm takipçilerini göster">
+              <span id="igfc-lbl-allFollowers" class="igfc-stat-label">Tüm Takipçiler</span>
               <span id="igfc-stat-followers" class="igfc-stat-value">0</span>
             </div>
-            <div class="igfc-stat-box" data-stat-tab="allFollowing" title="Tüm takip ettiklerini göster">
-              <span class="igfc-stat-label">Tüm Takip Edilen</span>
+            <div id="igfc-box-allFollowing" class="igfc-stat-box" data-stat-tab="allFollowing" title="Tüm takip ettiklerini göster">
+              <span id="igfc-lbl-allFollowing" class="igfc-stat-label">Tüm Takip Edilen</span>
               <span id="igfc-stat-following" class="igfc-stat-value">0</span>
             </div>
           </div>
@@ -3648,6 +4083,7 @@
       setTxt('igfc-select-all-btn', isEn ? '☑ Select All' : '☑ Tümünü Seç');
       setTxt('igfc-invert-select-btn', isEn ? '🔀 Invert' : '🔀 Tersini Seç');
       setTxt('igfc-deselect-all-btn', isEn ? '☐ Clear' : '☐ Temizle');
+      updatePerspectiveLabels();
       showToast(isEn ? 'Language switched to English.' : 'Dil Türkçe olarak değiştirildi.', 'info');
     });
 
@@ -3803,7 +4239,98 @@
     updateStatsUI();
   }
 
+  function updatePerspectiveLabels() {
+    const isSelf = state.isScanningSelf !== false;
+    const isEn = state.lang === 'en';
+    const uname = state.username && state.username !== 'aktif_hesap' ? `@${state.username}` : 'bu hesap';
+
+    const setLbl = (id, text) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    };
+    const setTitle = (id, title) => {
+      const el = document.getElementById(id);
+      if (el) el.title = title;
+    };
+    const setTabLabel = (tabId, prefixText) => {
+      const btn = document.getElementById(tabId);
+      if (!btn) return;
+      const badge = btn.querySelector('.igfc-tab-badge');
+      if (badge) {
+        btn.childNodes[0].textContent = `${prefixText} `;
+      }
+    };
+
+    if (isEn) {
+      if (isSelf) {
+        setLbl('igfc-lbl-nonFollowers', 'Not Following Back');
+        setLbl('igfc-lbl-fans', "You Don't Follow");
+        setLbl('igfc-lbl-mutuals', 'Mutuals');
+        setLbl('igfc-lbl-lostFollowers', 'Lost Followers');
+        setLbl('igfc-lbl-allFollowers', 'All Followers');
+        setLbl('igfc-lbl-allFollowing', 'All Following');
+        setTabLabel('igfc-tab-nonFollowers', '🚫 Not Following Back');
+        setTabLabel('igfc-tab-fans', "💙 You Don't Follow");
+        setTabLabel('igfc-tab-allFollowers', '👥 All Followers');
+        setTabLabel('igfc-tab-allFollowing', '📤 All Following');
+      } else {
+        setLbl('igfc-lbl-nonFollowers', 'Not Following Them');
+        setLbl('igfc-lbl-fans', "They Don't Follow");
+        setLbl('igfc-lbl-mutuals', 'Mutuals');
+        setLbl('igfc-lbl-lostFollowers', 'Lost Followers');
+        setLbl('igfc-lbl-allFollowers', 'Their Followers');
+        setLbl('igfc-lbl-allFollowing', 'Their Following');
+        setTabLabel('igfc-tab-nonFollowers', '🚫 Not Following Them');
+        setTabLabel('igfc-tab-fans', "💙 They Don't Follow");
+        setTabLabel('igfc-tab-allFollowers', '👥 Their Followers');
+        setTabLabel('igfc-tab-allFollowing', '📤 Their Following');
+      }
+      return;
+    }
+
+    if (isSelf) {
+      setLbl('igfc-lbl-nonFollowers', 'Takip Etmeyen');
+      setLbl('igfc-lbl-fans', 'Takip Etmediğin');
+      setLbl('igfc-lbl-mutuals', 'Karşılıklı');
+      setLbl('igfc-lbl-lostFollowers', 'Yeni Çıkanlar');
+      setLbl('igfc-lbl-allFollowers', 'Tüm Takipçiler');
+      setLbl('igfc-lbl-allFollowing', 'Tüm Takip Edilen');
+
+      setTitle('igfc-box-nonFollowers', 'Seni takip etmeyenleri göster');
+      setTitle('igfc-box-fans', 'Senin takip etmediklerini göster');
+      setTitle('igfc-box-mutuals', 'Karşılıklı takipleştiklerini göster');
+      setTitle('igfc-box-allFollowers', 'Tüm takipçilerini göster');
+      setTitle('igfc-box-allFollowing', 'Tüm takip ettiklerini göster');
+
+      setTabLabel('igfc-tab-nonFollowers', '🚫 Takip Etmeyenler');
+      setTabLabel('igfc-tab-fans', '💙 Takip Etmediklerin');
+      setTabLabel('igfc-tab-lostFollowers', '📉 Yeni Çıkanlar');
+      setTabLabel('igfc-tab-allFollowers', '👥 Tüm Takipçiler');
+      setTabLabel('igfc-tab-allFollowing', '📤 Tüm Takip Edilen');
+    } else {
+      setLbl('igfc-lbl-nonFollowers', 'Onu Takip Etmeyen');
+      setLbl('igfc-lbl-fans', 'Onun Takip Etmediği');
+      setLbl('igfc-lbl-mutuals', 'Karşılıklı');
+      setLbl('igfc-lbl-lostFollowers', 'Takipten Çıkanlar');
+      setLbl('igfc-lbl-allFollowers', 'Hesabın Takipçileri');
+      setLbl('igfc-lbl-allFollowing', 'Takip Ettikleri');
+
+      setTitle('igfc-box-nonFollowers', `${uname} hesabını geri takip etmeyenler`);
+      setTitle('igfc-box-fans', `${uname} hesabının geri takip etmedikleri`);
+      setTitle('igfc-box-mutuals', `${uname} ile karşılıklı takipleşenler`);
+      setTitle('igfc-box-allFollowers', `${uname} hesabının tüm takipçileri`);
+      setTitle('igfc-box-allFollowing', `${uname} hesabının tüm takip ettikleri`);
+
+      setTabLabel('igfc-tab-nonFollowers', '🚫 Onu Takip Etmeyenler');
+      setTabLabel('igfc-tab-fans', '💙 Onun Takip Etmedikleri');
+      setTabLabel('igfc-tab-lostFollowers', '📉 Takipten Çıkanlar');
+      setTabLabel('igfc-tab-allFollowers', '👥 Takipçileri');
+      setTabLabel('igfc-tab-allFollowing', '📤 Takip Ettikleri');
+    }
+  }
+
   function updateStatsUI() {
+    updatePerspectiveLabels();
     const setTxt = (id, val) => {
       const el = document.getElementById(id);
       if (el) el.textContent = String(val);
@@ -4230,6 +4757,8 @@
       let targetUserId = '';
       let expectedFollowers = null;
       let expectedFollowing = null;
+      let isPrivateTarget = false;
+      let followedByViewer = null;
 
       const cookieUserId = getCookie('ds_user_id');
       const viewer = getLoggedInViewerFromDOM();
@@ -4246,6 +4775,17 @@
         if (domSelf) {
           expectedFollowers = domSelf.followerCount;
           expectedFollowing = domSelf.followingCount;
+          isPrivateTarget = Boolean(domSelf.isPrivate);
+        }
+        const domSelfCounts = targetUsername !== 'aktif_hesap' ? extractVisibleCountsFromDOM(targetUsername) : null;
+        if (expectedFollowers == null && domSelfCounts?.followerCount != null) expectedFollowers = domSelfCounts.followerCount;
+        if (expectedFollowing == null && domSelfCounts?.followingCount != null) expectedFollowing = domSelfCounts.followingCount;
+        if ((expectedFollowers == null || expectedFollowing == null) && targetUsername !== 'aktif_hesap') {
+          const selfWeb = await fetchProfileViaWebInfo(targetUsername, false);
+          if (selfWeb) {
+            if (expectedFollowers == null && selfWeb.followerCount != null) expectedFollowers = selfWeb.followerCount;
+            if (expectedFollowing == null && selfWeb.followingCount != null) expectedFollowing = selfWeb.followingCount;
+          }
         }
       } else {
         updateStatus(`@${targetUsername || 'hesap'} profil detayları çözümleniyor...`);
@@ -4255,6 +4795,8 @@
         targetUsername = profile.username;
         expectedFollowers = profile.followerCount;
         expectedFollowing = profile.followingCount;
+        isPrivateTarget = Boolean(profile.isPrivate);
+        followedByViewer = profile.followedByViewer;
         if (inputEl) inputEl.value = targetUsername;
       }
 
@@ -4262,11 +4804,24 @@
         isScanningSelf = true;
       }
 
+      if (!isScanningSelf && isPrivateTarget) {
+        if (followedByViewer == null) {
+          followedByViewer = await checkViewerFollowsUser(targetUserId);
+        }
+        if (followedByViewer === false) {
+          throw new Error(
+            `"@${targetUsername}" gizli bir hesap ve şu an bu hesabı takip etmiyorsunuz. Takip etmediğiniz gizli hesapların listesi Instagram tarafından paylaşılmaz.`
+          );
+        }
+        addLog(`🔒 Takip ettiğiniz gizli hesap tespit edildi (@${targetUsername}). Gizli hesap uyumlu çoklu tamamlama modu aktif.`, 'info');
+      }
+
       const domCounts = extractVisibleCountsFromDOM(targetUsername);
       if (expectedFollowers == null && domCounts?.followerCount != null) expectedFollowers = domCounts.followerCount;
       if (expectedFollowing == null && domCounts?.followingCount != null) expectedFollowing = domCounts.followingCount;
 
       // Yeni tarama başlarken eski verileri sıfırla ki sayaçlar canlı olarak 0'dan artsın
+      state.isScanningSelf = isScanningSelf;
       state.username = targetUsername;
       state.userId = targetUserId;
       state.expectedFollowersCount = expectedFollowers;
@@ -4284,7 +4839,14 @@
       updateBulkButtons();
       renderList();
 
-      addLog(`Tarama başladı: @${targetUsername} (ID: ${targetUserId})`, 'info');
+      addLog(
+        `Tarama başladı: @${targetUsername} (ID: ${targetUserId}${isPrivateTarget ? ', Gizli Hesap' : ''}${
+          expectedFollowers != null || expectedFollowing != null
+            ? `, Beklenen: ${expectedFollowers ?? '?'} takipçi / ${expectedFollowing ?? '?'} takip`
+            : ''
+        })`,
+        'info'
+      );
 
       let lastLiveRender = 0;
       const triggerLiveUpdate = () => {
@@ -4296,6 +4858,8 @@
         }
       };
 
+      const fetchOpts = { isScanningSelf, isPrivate: isPrivateTarget };
+
       const followers = await fetchFriendshipList(
         targetUserId,
         'followers',
@@ -4305,7 +4869,8 @@
         (liveList) => {
           state.followers = liveList;
           triggerLiveUpdate();
-        }
+        },
+        fetchOpts
       );
       state.followers = followers;
       computeCategories();
@@ -4320,7 +4885,8 @@
         (liveList) => {
           state.following = liveList;
           triggerLiveUpdate();
-        }
+        },
+        fetchOpts
       );
       state.following = following;
       state.lastScannedAt = new Date().toISOString();
@@ -4380,7 +4946,7 @@
                     flwingMap.set(uid, { ...u, followOrderIndex: flwingMap.size });
                     fixedCount++;
                   } else if (st.following === false && flwingMap.has(uid)) {
-                    // Gerçekte sen takip etmiyorsan following'den çıkar
+                    // Gerçekte sen onu takip etmiyorsan following'den çıkar
                     flwingMap.delete(uid);
                     fixedCount++;
                   }
@@ -4406,15 +4972,29 @@
       saveScanHistory();
       renderList();
 
+      const flwGap =
+        typeof state.expectedFollowersCount === 'number' && state.expectedFollowersCount > state.followers.length
+          ? state.expectedFollowersCount - state.followers.length
+          : 0;
+      const flwingGap =
+        typeof state.expectedFollowingCount === 'number' && state.expectedFollowingCount > state.following.length
+          ? state.expectedFollowingCount - state.following.length
+          : 0;
+
       updateProgress(100);
+      const gapNote =
+        flwGap > 0 || flwingGap > 0
+          ? ` (Not: Instagram ${flwGap > 0 ? `${flwGap} takipçi` : ''}${flwGap > 0 && flwingGap > 0 ? ', ' : ''}${flwingGap > 0 ? `${flwingGap} takip edilen` : ''} kaydı gizli/askıya alınmış olabilir)`
+          : '';
+      const nfLabel = isScanningSelf ? 'Seni Takip Etmeyen' : 'Onu Takip Etmeyen';
       updateStatus(
-        `Tamamlandı! Takipçi: ${state.followers.length} | Takip Edilen: ${state.following.length} | Seni Takip Etmeyen: ${state.nonFollowers.length}`
+        `Tamamlandı! Takipçi: ${state.followers.length}${state.expectedFollowersCount ? `/${state.expectedFollowersCount}` : ''} | Takip Edilen: ${state.following.length}${state.expectedFollowingCount ? `/${state.expectedFollowingCount}` : ''} | ${nfLabel}: ${state.nonFollowers.length}${gapNote}`
       );
       addLog(
-        `✅ Tarama tamamlandı: ${state.followers.length} takipçi, ${state.following.length} takip edilen, ${state.nonFollowers.length} geri takip etmeyen.`,
+        `✅ Tarama tamamlandı: ${state.followers.length} takipçi, ${state.following.length} takip edilen, ${state.nonFollowers.length} geri takip etmeyen.${gapNote}`,
         'success'
       );
-      showToast(`Tarama tamamlandı! ${state.nonFollowers.length} kişi seni geri takip etmiyor.`, 'success');
+      showToast(`Tarama tamamlandı! ${state.nonFollowers.length} kişi geri takip etmiyor.`, 'success');
     } catch (err) {
       if (err.name === 'AbortError') {
         if (state.lastRateLimitError) {
