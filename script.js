@@ -1,5 +1,23 @@
+// ==UserScript==
+// @name         Instagram Follow Checker Pro Ultimate
+// @namespace    https://github.com/halukcansarioz/Instagram-Follow-Checker
+// @version      10.22
+// @description  Instagram takipçi/takip edilen analizi, geri takip etmeyenler, gizli hesap derin tamamlama, toplu işlem ve mobil tarayıcı uyumlu arayüz.
+// @author       halukcansarioz
+// @match        https://www.instagram.com/*
+// @match        https://instagram.com/*
+// @icon         https://www.instagram.com/static/images/ico/favicon-192.png/68d99ba29cc8.png
+// @grant        GM_xmlhttpRequest
+// @grant        GM_registerMenuCommand
+// @connect      cdninstagram.com
+// @connect      fbcdn.net
+// @connect      instagram.com
+// @connect      i.instagram.com
+// @run-at       document-idle
+// ==/UserScript==
+
 /**
-- Instagram Follow Checker Pro – Tam Sürüm (v10.15 Pro Ultimate)
+- Instagram Follow Checker Pro – Tam Sürüm (v10.22 Pro Ultimate)
 - Sade, Hızlı & Kararlı Sürüm:
 - - Takip edilen gizli hesaplarda eksik veri sorunu düzeltildi (özel başlıklar, geçersiz order temizliği, çift geçiş + otomatik a-z/0-9 arama tamamlama)
 - - Başka profil tarama (isScanningSelf) hatası düzeltildi
@@ -9,7 +27,7 @@
 - - Konsolda tekrar çalıştırmada event sızıntısı ve localStorage kota taşması engellendi
  */
 
-(() => {
+(function __igfcMain() {
   'use strict';
 
   const EXISTING_ID = 'ig-follow-checker-root';
@@ -23,6 +41,8 @@
 
   // Sabitler (Instagram GraphQL Query Hashes & API Parameters)
   const IG_APP_ID = '936619743392459';
+  const IG_MOBILE_WEB_APP_ID = '1217981644879628';
+  const IG_MOBILE_API_ORIGIN = 'https://i.instagram.com';
   const IG_ASBD_ID = '129477';
   const FOLLOWERS_QUERY_HASH = 'c76146de99bb02f6415203be841dd25a';
   const FOLLOWING_QUERY_HASH = 'd04b0a864b4b54837c0d870b0e77e076';
@@ -99,6 +119,7 @@
     abortController: null,
     bulkAbort: false,
     lastRateLimitError: '',
+    apiMode: 'web',
     isScanningSelf: true,
     username: '',
     userId: '',
@@ -113,6 +134,8 @@
     suspicious: [],
     lostFollowers: [],
     newFollowers: [],
+    lostFollowing: [],
+    newFollowing: [],
     whitelist: new Set(),
     favorites: new Set(),
     unfollowHistory: [],
@@ -156,6 +179,7 @@
     });
     state.avatarBlobCache.clear();
     document.getElementById(EXISTING_ID)?.remove();
+    document.getElementById('igfc-launcher-fab')?.remove();
   };
 
   // ============================================================================
@@ -280,6 +304,98 @@
     badge.classList.toggle('warning', count >= Math.floor(max * 0.55) && count < Math.floor(max * 0.85));
     badge.classList.toggle('danger', count >= Math.floor(max * 0.85));
   }
+  function updateApiModeUI() {
+    const pill = document.getElementById('igfc-apimode-badge');
+    if (!pill) return;
+    const isMob = state.apiMode === 'mobile';
+    pill.textContent = isMob ? '📱 Mobil Mod' : '💻 Web Mod';
+    pill.title = isMob
+      ? 'Mobil Web Modu aktif (tıklayarak Web moduna dönebilirsin)'
+      : 'Web Modu aktif (429 gelirse otomatik Mobil Web moduna geçer; tıklayarak manuel değiştirebilirsin)';
+    pill.style.background = isMob ? 'rgba(16, 185, 129, 0.22)' : '';
+    pill.style.color = isMob ? '#34d399' : '';
+    pill.style.borderColor = isMob ? 'rgba(16, 185, 129, 0.5)' : '';
+  }
+
+  function switchToMobileMode(reason = 'auto_429') {
+    if (state.apiMode === 'mobile') return false;
+    state.apiMode = 'mobile';
+    updateApiModeUI();
+    const isEn = state.lang === 'en';
+    const msg =
+      reason === 'auto_429'
+        ? isEn
+          ? '📱 HTTP 429 on Web — Switched automatically to Mobile Web Mode! Continuing scan...'
+          : '📱 Web hız sınırı (429) algılandı — Otomatik Mobil Web Moduna geçildi! Tarama mobil modda devam ediyor...'
+        : isEn
+        ? '📱 Switched to Mobile Web Mode.'
+        : '📱 Mobil Web Moduna geçildi.';
+    showMobileSwitchBanner(msg);
+    updateStatus(msg);
+    addLog(msg, 'warn');
+    showToast(
+      reason === 'auto_429'
+        ? isEn
+          ? '📱 429 detected — Switched to Mobile Mode!'
+          : '📱 429 algılandı — Otomatik Mobil Moda geçildi!'
+        : msg,
+      'warning'
+    );
+    return true;
+  }
+  function getGmXhr() {
+    if (typeof GM_xmlhttpRequest === 'function') return GM_xmlhttpRequest;
+    if (typeof GM !== 'undefined' && typeof GM.xmlHttpRequest === 'function') return GM.xmlHttpRequest;
+    return null;
+  }
+
+  function showMobileSwitchBanner(text) {
+    const banner = document.getElementById('igfc-mobile-banner');
+    const txtEl = document.getElementById('igfc-mobile-banner-text');
+    if (txtEl) txtEl.textContent = text;
+    if (banner) banner.classList.add('visible');
+  }
+
+  function hideMobileSwitchBanner() {
+    document.getElementById('igfc-mobile-banner')?.classList.remove('visible');
+  }
+
+  function fetchViaMobileGmXhr(url, options = {}) {
+    const gmXhr = getGmXhr();
+    if (!gmXhr) return null;
+    const mobileUrl = String(url).replace('https://www.instagram.com/api/v1/', `${IG_MOBILE_API_ORIGIN}/api/v1/`);
+    const headers = {
+      ...getAppHeaders(options.headers || {}),
+      'X-IG-App-ID': IG_MOBILE_WEB_APP_ID,
+      'Accept': '*/*',
+    };
+    return new Promise((resolve, reject) => {
+      gmXhr({
+        method: options.method || 'GET',
+        url: mobileUrl,
+        headers,
+        data: options.body || undefined,
+        withCredentials: true,
+        timeout: 20000,
+        onload: (r) => {
+          resolve({
+            ok: r.status >= 200 && r.status < 300,
+            status: r.status,
+            headers: {
+              get: (name) => {
+                const m = String(r.responseHeaders || '').match(new RegExp(`^${name}:\s*(.+)$`, 'im'));
+                return m ? m[1].trim() : null;
+              },
+            },
+            text: async () => r.responseText || '',
+            json: async () => JSON.parse(r.responseText || '{}'),
+          });
+        },
+        onerror: () => reject(new Error('Mobil uç nokta ağ hatası')),
+        ontimeout: () => reject(new Error('Mobil uç nokta zaman aşımı')),
+      });
+    });
+  }
 
   function getCookie(name) {
     const value = `; ${document.cookie}`;
@@ -300,7 +416,7 @@
   }
 
   function getAppIGAppID() {
-    return IG_APP_ID;
+    return state.apiMode === 'mobile' ? IG_MOBILE_WEB_APP_ID : IG_APP_ID;
   }
 
   let cachedWWWClaim = '';
@@ -315,14 +431,16 @@
   }
 
   function getAppHeaders(extra = {}) {
-    return {
+    const base = {
       'X-IG-App-ID': getAppIGAppID(),
-      'X-ASBD-ID': IG_ASBD_ID,
       'X-IG-WWW-Claim': getWWWClaim(),
       'X-CSRFToken': getAppCSRFToken(),
       'X-Requested-With': 'XMLHttpRequest',
-      ...extra,
     };
+    if (state.apiMode !== 'mobile') {
+      base['X-ASBD-ID'] = IG_ASBD_ID;
+    }
+    return { ...base, ...extra };
   }
 
   function getDefaultUsername() {
@@ -743,6 +861,8 @@
         state.following = data.following;
         state.lostFollowers = data.lostFollowers || [];
         state.newFollowers = data.newFollowers || [];
+        state.lostFollowing = data.lostFollowing || [];
+        state.newFollowing = data.newFollowing || [];
         return true;
       }
     } catch (_) {}
@@ -760,6 +880,8 @@
         following: state.following,
         lostFollowers: state.lostFollowers,
         newFollowers: state.newFollowers,
+        lostFollowing: state.lostFollowing,
+        newFollowing: state.newFollowing,
       };
       safeSetItem(STORAGE_LAST_SCAN, JSON.stringify(payload));
       updateCacheInfoUI();
@@ -1153,7 +1275,6 @@
     const cleanOptions = { ...options };
     delete cleanOptions._ignoreScanAbort;
     delete cleanOptions._softRateLimit;
-    const headers = getAppHeaders(cleanOptions.headers || {});
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       if (useScanSignal && state.abortController?.signal.aborted) {
@@ -1161,12 +1282,20 @@
       }
 
       try {
-        const res = await fetch(url, {
-          ...cleanOptions,
-          headers,
-          credentials: 'include',
-          signal: useScanSignal && state.abortController ? state.abortController.signal : undefined,
-        });
+        const reqHeaders = getAppHeaders(cleanOptions.headers || {});
+        const useGmMobile =
+          state.apiMode === 'mobile' &&
+          Boolean(getGmXhr()) &&
+          String(url).includes('/api/v1/');
+
+        const res = useGmMobile
+          ? await fetchViaMobileGmXhr(url, cleanOptions)
+          : await fetch(url, {
+              ...cleanOptions,
+              headers: reqHeaders,
+              credentials: 'include',
+              signal: useScanSignal && state.abortController ? state.abortController.signal : undefined,
+            });
 
         const newClaim = res?.headers?.get?.('x-ig-set-www-claim');
         if (newClaim && newClaim !== '0') {
@@ -1176,9 +1305,32 @@
           } catch (_) {}
         }
 
-        // HTTP 429 geldiğinde isteğe bağlı metadata çağrısı değilse anında durdur ve hata göster
+        // HTTP 429 geldiğinde: Web modundaysa anında uyarı verip otomatik Mobil Moda geç ve yeniden dene
         if (res.status === 429) {
           if (softRateLimit) return res;
+          if (state.apiMode !== 'mobile') {
+            switchToMobileMode('auto_429');
+            await sleep(1800);
+            const mobileRes =
+              Boolean(getGmXhr()) && String(url).includes('/api/v1/')
+                ? await fetchViaMobileGmXhr(url, cleanOptions)
+                : await fetch(url, {
+                    ...cleanOptions,
+                    headers: getAppHeaders(cleanOptions.headers || {}),
+                    credentials: 'include',
+                    signal: useScanSignal && state.abortController ? state.abortController.signal : undefined,
+                  });
+            if (mobileRes && mobileRes.status !== 429) {
+              const mClaim = mobileRes?.headers?.get?.('x-ig-set-www-claim');
+              if (mClaim && mClaim !== '0') {
+                cachedWWWClaim = mClaim;
+                try {
+                  sessionStorage.setItem('www-claim-v2', mClaim);
+                } catch (_) {}
+              }
+              return mobileRes;
+            }
+          }
           notifyRateLimitError(url);
           if (useScanSignal) {
             throw new DOMException('HTTP 429 Rate Limit', 'AbortError');
@@ -1553,7 +1705,7 @@
       const surfaceParam = useSurface ? '&search_surface=follow_list_page' : '';
       const rankParam = rankToken ? `&rank_token=${encodeURIComponent(rankToken)}` : '';
       const url = `https://www.instagram.com/api/v1/friendships/${encodeURIComponent(userId)}/${type}/?count=${pageSize}${surfaceParam}${orderParam}${rankParam}${maxId ? `&max_id=${encodeURIComponent(maxId)}` : ''}`;
-      const res = await fetchWithRetry(url, {}, 1);
+      const res = await fetchWithRetry(url, { _softRateLimit: state.apiMode === 'mobile' && page === 0 }, 1);
       if (!res || !res.ok) {
         throw new Error(`REST API ${type} hatası (${res?.status || 'Ağ'})`);
       }
@@ -1736,7 +1888,7 @@
     const secondChars = 'aeiournlkstmydbchgpzvfwjxq0123456789_.'.split('');
     const label = type === 'followers' ? 'Takipçiler' : 'Takip Edilenler';
     const cfg = SPEED_CONFIGS[state.speedMode] || SPEED_CONFIGS.safe;
-    const concurrency = Math.max(1, cfg.scanConcurrency || 2);
+    const concurrency = state.apiMode === 'mobile' ? 1 : Math.max(1, cfg.scanConcurrency || 2);
     let recoveredTotal = 0;
     const saturatedPrefixes = [];
 
@@ -1799,7 +1951,7 @@
           deepQueue.push(`${ch1}${ch2}`);
         }
       }
-      const maxDeepQueries = Math.min(deepQueue.length, 150);
+      const maxDeepQueries = Math.min(deepQueue.length, expectedTotal != null ? 300 : 150);
       addLog(
         `🔍 ${label} için ${saturatedPrefixes.length} doygun harfte hızlı 2 karakterli derin arama (en fazla ${maxDeepQueries} sorgu, x${concurrency} paralel)...`,
         'info'
@@ -1848,7 +2000,7 @@
           `${label} derin arama ("${batch.join(',')}"): ${sharedMap.size}${expectedTotal ? ` / ${expectedTotal}` : ''} (+${recoveredTotal})`
         );
 
-        if (consecutiveEmptyDeep >= (expectedTotal == null ? 24 : 36)) break;
+        if (consecutiveEmptyDeep >= (expectedTotal == null ? 24 : 75)) break;
         if (doneCount < maxDeepQueries && !(typeof expectedTotal === 'number' && expectedTotal > 0 && sharedMap.size >= expectedTotal)) {
           await sleep(Math.max(250, Math.round(getRateLimitDelay('scan') * 0.6)));
         }
@@ -2300,7 +2452,7 @@
   // ANLIK TAKİPÇİ GÖRÜNTÜSÜ (SNAPSHOT) KARŞILAŞTIRMA & KAYDETME
   // ============================================================================
 
-  function compareAndSaveSnapshot(userId, currentFollowers) {
+  function compareAndSaveSnapshot(userId, currentFollowers, currentFollowing = []) {
     try {
       const raw = localStorage.getItem(STORAGE_SNAPSHOT);
       const allSnapshots = raw ? JSON.parse(raw) : {};
@@ -2309,7 +2461,6 @@
       if (prev && Array.isArray(prev.followers)) {
         const currentIds = new Set(currentFollowers.map((u) => String(u.id)));
         const prevIds = new Set(prev.followers.map((u) => String(u.id)));
-
         state.lostFollowers = prev.followers.filter((u) => !currentIds.has(String(u.id)));
         state.newFollowers = currentFollowers.filter((u) => !prevIds.has(String(u.id)));
       } else {
@@ -2317,16 +2468,29 @@
         state.newFollowers = [];
       }
 
+      if (prev && Array.isArray(prev.following) && Array.isArray(currentFollowing)) {
+        const curFlwingIds = new Set(currentFollowing.map((u) => String(u.id)));
+        const prevFlwingIds = new Set(prev.following.map((u) => String(u.id)));
+        state.lostFollowing = prev.following.filter((u) => !curFlwingIds.has(String(u.id)));
+        state.newFollowing = currentFollowing.filter((u) => !prevFlwingIds.has(String(u.id)));
+      } else {
+        state.lostFollowing = [];
+        state.newFollowing = [];
+      }
+
+      const compact = (u) => ({
+        id: String(u.id),
+        username: u.username,
+        full_name: u.full_name || '',
+        profile_pic_url: u.profile_pic_url || '',
+        is_verified: Boolean(u.is_verified),
+        is_private: Boolean(u.is_private),
+      });
+
       allSnapshots[userId] = {
         updatedAt: new Date().toISOString(),
-        followers: currentFollowers.map((u) => ({
-          id: String(u.id),
-          username: u.username,
-          full_name: u.full_name || '',
-          profile_pic_url: u.profile_pic_url || '',
-          is_verified: Boolean(u.is_verified),
-          is_private: Boolean(u.is_private),
-        })),
+        followers: currentFollowers.map(compact),
+        following: Array.isArray(currentFollowing) ? currentFollowing.map(compact) : [],
       };
       safeSetItem(STORAGE_SNAPSHOT, JSON.stringify(allSnapshots));
     } catch (_) {}
@@ -2539,11 +2703,18 @@
     overlay.innerHTML = `
       <div id="igfc-changelog-modal" class="igfc-submodal-card">
         <div class="igfc-submodal-header">
-          <h3>🚀 Sürüm Geçmişi (v10.15 Pro Ultimate)</h3>
+          <h3>🚀 Sürüm Geçmişi (v10.22 Pro Ultimate)</h3>
           <button id="igfc-changelog-close-btn" class="igfc-win-btn close" title="Kapat">✕</button>
         </div>
         <div class="igfc-submodal-body">
           <ul class="igfc-changelog-list">
+            <li><strong>v10.22 Pro:</strong> Takip edilenlerdeki değişiklik takibi eklendi: artık taramalar arasında ve Karşılaştır aracında <strong>Takipten Çıkardıkları</strong> (<code>lostFollowing</code>) ve <strong>Yeni Takip Ettikleri</strong> (<code>newFollowing</code>) otomatik olarak tespit edilip ayrı sekmelerde gösteriliyor.</li>
+            <li><strong>v10.21 Pro:</strong> Beklenen takipçi/takip sayısı bilindiğinde son 1–5 eksik kişiyi de yakalamak için derin arama limiti 300'e, boş seri eşiği 75'e çıkarıldı (hedef sayıya ulaşıldığı milisaniyede anında durur).</li>
+            <li><strong>v10.20 Pro:</strong> Harici Python köprüsü kaldırıldı; tek <code>.js</code> dosyası içinde Web 429 algılandığında otomatik uyarı verip doğrudan <strong>📱 Mobil Mod</strong>'a (Tampermonkey'de <code>i.instagram.com</code> CORS-free mobil uç noktası, konsolda Mobil Web + GraphQL yedeği) geçen tek parça yapıya geçildi.</li>
+            <li><strong>v10.19 Pro:</strong> Yerel PC Mobil API Köprüsü (<code>ig_mobile_bridge.py</code>, <code>http://127.0.0.1:8765</code>) desteği eklendi: Web 429 algılandığında köprü açıksa otomatik olarak mobil uygulama API'sine geçip verileri çekiyor ve <strong>📱 Mobil Köprü Aktif</strong> olarak gösteriyor.</li>
+            <li><strong>v10.18 Pro:</strong> Web API'de HTTP 429 algılandığında taramayı hemen kesmek yerine otomatik <strong>📱 Mobil Web Modu</strong>'na (Mobil Web App ID + tekli güvenli tempo + GraphQL yedeği) geçiş ve üst çubukta görünür <code>📱 Mobil Mod</code> göstergesi eklendi.</li>
+            <li><strong>v10.17 Pro:</strong> Uygulama içine <strong>📲 Kurulum / Mobil</strong> merkezi eklendi: tek tıkla <code>.user.js</code> dosyası indirme, Tampermonkey/Mobil kodunu panoya kopyalama, GitHub tek tık kurulum bağlantısı ve PC/Android/iOS kurulum adımları artık doğrudan panel içinden yapılabiliyor.</li>
+            <li><strong>v10.16 Pro:</strong> Tampermonkey / Violentmonkey için <code>==UserScript==</code> başlığı, mobil tarayıcılar (Kiwi, Mises, Firefox Android) için tam ekran duyarlı arayüz, dokunmatik kaydırılabilir sekmeler ve yüzen başlatıcı buton eklendi.</li>
             <li><strong>v10.15 Pro:</strong> Profil üstündeki takipçi/takip sayılarının (<code>446 takipçi / 580 takip</code>) DOM'dan okunamaması (? görünmesi) ve bu yüzden hedefe ulaşıldıktan sonra gereksiz derin arama yapılıp HTTP 429'a düşülmesi giderildi; derin arama kotası 429 korumalı hale getirildi.</li>
             <li><strong>v10.14 Pro:</strong> Başka hesap tarandığında üst kart ve sekme başlıkları dinamik olarak değişiyor (Onu Takip Etmeyen / Onun Takip Etmediği / Hesabın Takipçileri / Takip Ettikleri), REST 2. geçişteki erken durma hatası düzeltildi ve paralel arama gruplarıyla tarama 2–3 kat hızlandırıldı.</li>
             <li><strong>v10.13 Pro:</strong> Kendi hesabınızda beklenen sayı DOM'da bulunamadığında (ör. ana sayfadan veya başka profilden tarama başlatıldığında) derin arama tamamlamasının atlanması sorunu giderildi; kendi hesabınızda da beklenen sayılar otomatik alınıp eksikler tamamlanıyor.</li>
@@ -2817,7 +2988,7 @@
       if (e.target === overlay) closeCompareModal();
     });
 
-    const applyComparison = (oldFollowers) => {
+    const applyComparison = (oldFollowers, oldFollowing = null) => {
       if (!Array.isArray(oldFollowers)) {
         showToast('Geçerli bir takipçi listesi bulunamadı!', 'error');
         return;
@@ -2827,6 +2998,14 @@
 
       state.lostFollowers = oldFollowers.filter((u) => !currentIds.has(String(u.id)));
       state.newFollowers = state.followers.filter((u) => !oldIds.has(String(u.id)));
+
+      if (Array.isArray(oldFollowing)) {
+        const curFlwingIds = new Set(state.following.map((u) => String(u.id)));
+        const oldFlwingIds = new Set(oldFollowing.map((u) => String(u.id)));
+        state.lostFollowing = oldFollowing.filter((u) => !curFlwingIds.has(String(u.id)));
+        state.newFollowing = state.following.filter((u) => !oldFlwingIds.has(String(u.id)));
+      }
+
       updateStatsUI();
       saveLastScanCache();
 
@@ -2836,10 +3015,14 @@
           <div class="igfc-detail-stats">
             <div class="igfc-detail-stat"><span>📉 Takipten Çıkanlar</span><strong>${state.lostFollowers.length} kişi</strong></div>
             <div class="igfc-detail-stat"><span>📈 Yeni Gelen Takipçiler</span><strong>${state.newFollowers.length} kişi</strong></div>
+            <div class="igfc-detail-stat"><span>➖ Takipten Çıkardıkları</span><strong>${state.lostFollowing.length} kişi</strong></div>
+            <div class="igfc-detail-stat"><span>➕ Yeni Takip Ettikleri</span><strong>${state.newFollowing.length} kişi</strong></div>
           </div>
           <div class="igfc-tools-btn-row">
-            <button id="igfc-goto-lost-btn" class="igfc-btn igfc-btn-danger">📉 Yeni Çıkanlar Sekmesine Git (${state.lostFollowers.length})</button>
-            <button id="igfc-goto-new-btn" class="igfc-btn igfc-btn-success">📈 Yeni Gelenler Sekmesine Git (${state.newFollowers.length})</button>
+            <button id="igfc-goto-lost-btn" class="igfc-btn igfc-btn-danger">📉 Yeni Çıkanlar (${state.lostFollowers.length})</button>
+            <button id="igfc-goto-new-btn" class="igfc-btn igfc-btn-success">📈 Yeni Gelenler (${state.newFollowers.length})</button>
+            <button id="igfc-goto-lost-flwing-btn" class="igfc-btn igfc-btn-warning">➖ Takipten Çıkardıkları (${state.lostFollowing.length})</button>
+            <button id="igfc-goto-new-flwing-btn" class="igfc-btn igfc-btn-primary">➕ Yeni Takip Ettikleri (${state.newFollowing.length})</button>
           </div>
         `;
         resBox.querySelector('#igfc-goto-lost-btn')?.addEventListener('click', () => {
@@ -2850,15 +3033,26 @@
           closeCompareModal();
           switchTab('newFollowers');
         });
+        resBox.querySelector('#igfc-goto-lost-flwing-btn')?.addEventListener('click', () => {
+          closeCompareModal();
+          switchTab('lostFollowing');
+        });
+        resBox.querySelector('#igfc-goto-new-flwing-btn')?.addEventListener('click', () => {
+          closeCompareModal();
+          switchTab('newFollowing');
+        });
       }
-      showToast(`Karşılaştırma tamamlandı: ${state.lostFollowers.length} çıkan, ${state.newFollowers.length} yeni takipçi.`, 'success');
+      showToast(
+        `Karşılaştırma tamamlandı: ${state.lostFollowers.length} çıkan takipçi, ${state.lostFollowing.length} takipten çıkarılan.`,
+        'success'
+      );
     };
 
     overlay.querySelector('#igfc-run-compare-btn')?.addEventListener('click', () => {
       const idx = Number(overlay.querySelector('#igfc-compare-history-select')?.value || 0);
       const selected = state.scanHistory[idx];
       if (selected && Array.isArray(selected.followers)) {
-        applyComparison(selected.followers);
+        applyComparison(selected.followers, selected.following || null);
       }
     });
 
@@ -2871,7 +3065,8 @@
       try {
         const parsed = JSON.parse(overlay.querySelector('#igfc-compare-json-input')?.value || '{}');
         const list = Array.isArray(parsed) ? parsed : parsed.followers || parsed.nonFollowers;
-        applyComparison(list);
+        const flwingList = Array.isArray(parsed?.following) ? parsed.following : null;
+        applyComparison(list, flwingList);
       } catch (_) {
         showToast('JSON ayrıştırılamadı! Geçerli bir JSON yapıştırın.', 'error');
       }
@@ -2950,6 +3145,125 @@
       closeSettingsModal();
     });
   }
+  const USERSCRIPT_META_HEADER = [
+    '// ==UserScript==',
+    '// @name         Instagram Follow Checker Pro Ultimate',
+    '// @namespace    https://github.com/halukcansarioz/Instagram-Follow-Checker',
+    '// @version      10.22',
+    '// @description  Instagram takipçi/takip edilen analizi, geri takip etmeyenler, gizli hesap derin tamamlama, toplu işlem ve mobil tarayıcı uyumlu arayüz.',
+    '// @author       halukcansarioz',
+    '// @match        https://www.instagram.com/*',
+    '// @match        https://instagram.com/*',
+    '// @icon         https://www.instagram.com/static/images/ico/favicon-192.png/68d99ba29cc8.png',
+    '// @grant        GM_xmlhttpRequest',
+    '// @grant        GM_registerMenuCommand',
+    '// @connect      cdninstagram.com',
+    '// @connect      fbcdn.net',
+    '// @connect      instagram.com',
+    '// @connect      i.instagram.com',
+    '// @run-at       document-idle',
+    '// ==/UserScript==',
+  ].join('\n');
+
+  function buildUserscriptBundle() {
+    return `${USERSCRIPT_META_HEADER}\n\n(${__igfcMain.toString()})();\n`;
+  }
+
+  function downloadUserscriptFile() {
+    try {
+      const bundle = buildUserscriptBundle();
+      const blob = new Blob([bundle], { type: 'text/javascript;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'instagram-follow-checker-pro.user.js';
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('instagram-follow-checker-pro.user.js indirildi!', 'success');
+    } catch (err) {
+      showToast(`Dosya oluşturulamadı: ${err.message}`, 'error');
+    }
+  }
+
+  function closeInstallModal() {
+    document.getElementById('igfc-install-modal')?.closest('.igfc-submodal-overlay')?.remove();
+  }
+
+  function openInstallModal() {
+    closeAllSubModals();
+    const isUserscript =
+      typeof GM_info !== 'undefined' ||
+      typeof GM_registerMenuCommand === 'function' ||
+      typeof GM_xmlhttpRequest === 'function';
+
+    const overlay = document.createElement('div');
+    overlay.className = 'igfc-submodal-overlay';
+    overlay.innerHTML = `
+      <div id="igfc-install-modal" class="igfc-submodal-card wide">
+        <div class="igfc-submodal-header">
+          <h3>📲 PC & Mobil Kalıcı Kurulum Merkezi (Tampermonkey / Userscript)</h3>
+          <button id="igfc-install-close-btn" class="igfc-win-btn close" title="Kapat">✕</button>
+        </div>
+        <div class="igfc-submodal-body">
+          <div style="padding:10px 12px;border-radius:10px;background:var(--bg-secondary);border:1px solid var(--border);font-size:12.5px;line-height:1.5;">
+            <strong>Mevcut Çalışma Modu:</strong> ${
+              isUserscript
+                ? '<span style="color:#10b981;font-weight:700;">✅ Userscript (Tampermonkey / Violentmonkey) aktif!</span>'
+                : '<span style="color:#fbbf24;font-weight:700;">⚡ Tarayıcı Konsolu modu (geçici). Kalıcı kurulum için aşağıdaki butonları kullanabilirsin.</span>'
+            }
+          </div>
+
+          <div class="igfc-tools-section">
+            <h4>⚡ Tek Tıkla Kurulum Araçları</h4>
+            <div class="igfc-tools-btn-row">
+              <button id="igfc-dl-userscript-btn" class="igfc-btn igfc-btn-success">📥 .user.js Dosyasını İndir</button>
+              <button id="igfc-copy-userscript-btn" class="igfc-btn igfc-btn-primary">📋 Tampermonkey Kodunu Kopyala</button>
+              <a href="https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo" target="_blank" rel="noopener noreferrer" class="igfc-btn igfc-btn-secondary" style="text-decoration:none;">🧩 Chrome Tampermonkey</a>
+              <a href="https://raw.githubusercontent.com/halukcansarioz/Instagram-Follow-Checker/main/script.user.js" target="_blank" rel="noopener noreferrer" class="igfc-btn igfc-btn-secondary" style="text-decoration:none;">🔗 GitHub Tek Tık Kurulum</a>
+            </div>
+          </div>
+
+          <div class="igfc-last-person-grid" style="margin-top:14px;">
+            <div class="igfc-last-person-box">
+              <div class="igfc-last-person-role">💻 PC (Chrome / Edge / Brave)</div>
+              <ol style="margin:0;padding-left:18px;font-size:12px;line-height:1.55;color:var(--text-secondary);">
+                <li><strong>Chrome Tampermonkey</strong> eklentisini kur (veya Edge/Firefox mağazasından ekle).</li>
+                <li>Yukarıdan <strong>📋 Tampermonkey Kodunu Kopyala</strong> butonuna bas.</li>
+                <li>Tampermonkey → <strong>Yeni betik oluştur</strong> → içeriği silip yapıştır → <strong>Ctrl + S</strong> ile kaydet.</li>
+                <li>Artık <code>instagram.com</code> açıldığında sağ altta <strong>📸 IG Checker</strong> butonu hep hazır durur.</li>
+              </ol>
+            </div>
+
+            <div class="igfc-last-person-box">
+              <div class="igfc-last-person-role">📱 Android & iPhone (Mobil Tarayıcı)</div>
+              <ol style="margin:0;padding-left:18px;font-size:12px;line-height:1.55;color:var(--text-secondary);">
+                <li><strong>Android:</strong> Play Store'dan <strong>Mises Browser</strong> veya <strong>Firefox</strong> indirip <strong>Tampermonkey / Violentmonkey</strong> ekle.</li>
+                <li><strong>iPhone:</strong> App Store'dan <strong>Userscripts</strong> (Safari eklentisi) kur.</li>
+                <li>İndirdiğin <code>.user.js</code> dosyasını içe aktar veya kopyaladığın kodu yeni betik olarak kaydet.</li>
+                <li><strong>429 İpucu:</strong> Web hız sınırına takılırsan PC'yi telefonun <strong>Hotspot</strong> internetine bağla veya mobilde hücresel veriyle aç.</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const root = document.getElementById(EXISTING_ID);
+    (root || document.body).appendChild(overlay);
+
+    overlay.querySelector('#igfc-install-close-btn')?.addEventListener('click', closeInstallModal);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeInstallModal();
+    });
+
+    overlay.querySelector('#igfc-dl-userscript-btn')?.addEventListener('click', downloadUserscriptFile);
+    overlay.querySelector('#igfc-copy-userscript-btn')?.addEventListener('click', async () => {
+      const ok = await copyTextSafe(buildUserscriptBundle());
+      if (ok) showToast('Tampermonkey / Mobil Userscript kodu panoya kopyalandı!', 'success');
+      else showToast('Panoya kopyalanamadı.', 'error');
+    });
+  }
+
 
   // ============================================================================
   // 8-YÖNLÜ KENARDAN VE KÖŞEDEN BOYUTLANDIRMA + SÜRÜKLENEBİLİR PENCERE YÖNETİCİSİ
@@ -3449,6 +3763,24 @@
           border-bottom-color: #f87171;
         }
         .igfc-error-banner.visible { display: flex; }
+        .igfc-mobile-banner {
+          display: none;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          padding: 9px 14px;
+          background: rgba(16, 185, 129, 0.16);
+          border-bottom: 1px solid rgba(16, 185, 129, 0.55);
+          color: #a7f3d0;
+          font-size: 12.5px;
+          font-weight: 600;
+          flex-shrink: 0;
+        }
+        #igfc-modal[data-theme="light"] .igfc-mobile-banner {
+          background: #d1fae5;
+          color: #065f46;
+        }
+        .igfc-mobile-banner.visible { display: flex; }
         .igfc-error-banner-body { flex: 1; }
         .igfc-error-banner-title { font-weight: 700; margin-bottom: 2px; }
         .igfc-error-banner-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
@@ -3713,6 +4045,107 @@
         .igfc-toast.success { border-left-color: #10b981; }
         .igfc-toast.error { border-left-color: #ef4444; }
         .igfc-toast.warning { border-left-color: #f59e0b; }
+        @media (max-width: 768px) {
+          #igfc-modal {
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100dvh !important;
+            max-width: 100vw !important;
+            max-height: 100dvh !important;
+            border-radius: 0 !important;
+            border: none !important;
+            font-size: 12.5px !important;
+          }
+          #igfc-modal.minimized {
+            top: auto !important;
+            bottom: 12px !important;
+            right: 12px !important;
+            left: auto !important;
+            width: 240px !important;
+            height: 48px !important;
+            border-radius: 14px !important;
+            border: 1px solid var(--border) !important;
+          }
+          .igfc-resizer,
+          #igfc-zoom-out-btn,
+          #igfc-zoom-label,
+          #igfc-zoom-in-btn,
+          #igfc-maximize-btn {
+            display: none !important;
+          }
+          .igfc-header {
+            padding: 8px 10px;
+            gap: 6px;
+            cursor: default;
+          }
+          .igfc-header-right {
+            gap: 5px;
+            padding-top: 5px;
+          }
+          .igfc-stats-row {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 5px;
+            padding: 7px 10px;
+          }
+          .igfc-stat-box {
+            padding: 5px 7px;
+          }
+          .igfc-stat-label {
+            font-size: 10px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .igfc-stat-value {
+            font-size: 14px;
+          }
+          .igfc-controls {
+            padding: 7px 10px;
+            gap: 5px;
+          }
+          .igfc-controls .igfc-input,
+          .igfc-controls .igfc-select {
+            height: 34px;
+            font-size: 12px;
+          }
+          #igfc-username-input {
+            width: 100% !important;
+            flex: 1 1 140px;
+          }
+          .igfc-btn {
+            min-height: 34px;
+            padding: 0 9px;
+            font-size: 11.5px;
+          }
+          .igfc-subbar {
+            padding: 6px 10px;
+            gap: 6px;
+          }
+          .igfc-tabs {
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            width: 100%;
+            padding-bottom: 2px;
+          }
+          .igfc-tab {
+            flex-shrink: 0;
+          }
+          .igfc-list {
+            grid-template-columns: 1fr;
+            padding: 8px 10px;
+            gap: 8px;
+          }
+          .igfc-progress-track {
+            width: 90px;
+          }
+          .igfc-floating-bar {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 6px;
+          }
+        }
       </style>
 
       <div id="igfc-toast-container" class="igfc-toast-container"></div>
@@ -3731,7 +4164,8 @@
           <div class="igfc-header-top">
             <div class="igfc-title">
               <span>📸 IG Follow Checker</span>
-              <button id="igfc-changelog-btn" class="igfc-badge" title="Sürüm Geçmişi ve Yenilikler">v10.15 Pro</button>
+              <button id="igfc-changelog-btn" class="igfc-badge" title="Sürüm Geçmişi ve Yenilikler">v10.22 Pro</button>
+              <button id="igfc-apimode-badge" class="igfc-quota-pill igfc-hide-on-min" style="cursor:pointer;" title="Web / Mobil Web modu">💻 Web Mod</button>
               <span id="igfc-quota-badge" class="igfc-quota-pill igfc-hide-on-min">Günlük Kota: 0/150</span>
               <span id="igfc-cache-info" class="igfc-cache-info igfc-hide-on-min" style="font-size:11.5px;color:var(--text-secondary);"></span>
             </div>
@@ -3751,6 +4185,7 @@
             <button id="igfc-analytics-btn" class="igfc-btn igfc-btn-secondary" title="Hesap Analizi & Temizlik Sihirbazı">🛠 Araçlar</button>
             <button id="igfc-compare-modal-btn" class="igfc-btn igfc-btn-secondary" title="Geçmiş Taramaları Karşılaştır">🔀 Karşılaştır</button>
             <button id="igfc-settings-btn" class="igfc-btn igfc-btn-secondary" title="Ayarlar & Önbellek">⚙ Ayarlar</button>
+            <button id="igfc-install-btn" class="igfc-btn igfc-btn-primary" title="PC & Mobil Tampermonkey / Userscript Kurulum Merkezi">📲 Kurulum / Mobil</button>
             <button id="igfc-lang-btn" class="igfc-btn igfc-btn-secondary" title="Dil Değiştir (TR / EN)">🌐 TR</button>
 
             <div style="margin-left:auto;display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
@@ -3856,12 +4291,18 @@
             <span id="igfc-progress-pct" class="igfc-progress-pct">0%</span>
           </div>
 
+          <div id="igfc-mobile-banner" class="igfc-mobile-banner" role="status">
+            <span id="igfc-mobile-banner-text">📱 Mobil Moda geçildi! Tarama mobil modda devam ediyor...</span>
+            <button id="igfc-mobile-banner-close" class="igfc-win-btn close" title="Gizle">✕</button>
+          </div>
+
           <div id="igfc-error-banner" class="igfc-error-banner" role="alert">
             <div class="igfc-error-banner-body">
               <div id="igfc-error-banner-title" class="igfc-error-banner-title">⛔ Hata: Instagram Hız Sınırı (HTTP 429 – Too Many Requests)</div>
               <div id="igfc-error-banner-text">Instagram oturumunuza geçici istek sınırı uyguladığı için tarama otomatik durduruldu. 30–60 dakika bekleyip Güvenli Mod ile deneyin veya resmi JSON dosyanızı yükleyin.</div>
             </div>
             <div class="igfc-error-banner-actions">
+              <button id="igfc-error-install-btn" class="igfc-btn igfc-btn-success">📲 Tampermonkey / Mobil</button>
               <button id="igfc-error-json-btn" class="igfc-btn igfc-btn-primary">📂 JSON Yükle</button>
               <button id="igfc-error-close-btn" class="igfc-win-btn close" title="Uyarıyı Kapat">✕</button>
             </div>
@@ -3877,6 +4318,8 @@
               <button id="igfc-tab-allFollowing" class="igfc-tab" data-tab="allFollowing">📤 Tüm Takip Edilen <span class="igfc-tab-badge" id="igfc-cnt-allFollowing">0</span></button>
               <button id="igfc-tab-lostFollowers" class="igfc-tab" data-tab="lostFollowers">📉 Yeni Çıkanlar <span class="igfc-tab-badge" id="igfc-cnt-lostFollowers">0</span></button>
               <button id="igfc-tab-newFollowers" class="igfc-tab" data-tab="newFollowers">📈 Yeni Gelenler <span class="igfc-tab-badge" id="igfc-cnt-newFollowers">0</span></button>
+              <button id="igfc-tab-lostFollowing" class="igfc-tab" data-tab="lostFollowing">➖ Takipten Çıkardıkların <span class="igfc-tab-badge" id="igfc-cnt-lostFollowing">0</span></button>
+              <button id="igfc-tab-newFollowing" class="igfc-tab" data-tab="newFollowing">➕ Yeni Takip Ettiklerin <span class="igfc-tab-badge" id="igfc-cnt-newFollowing">0</span></button>
               <button id="igfc-tab-favorites" class="igfc-tab" data-tab="favorites">💛 Favoriler <span class="igfc-tab-badge" id="igfc-cnt-favorites">0</span></button>
               <button id="igfc-tab-whitelist" class="igfc-tab" data-tab="whitelist">★ Korunanlar <span class="igfc-tab-badge" id="igfc-cnt-whitelist">0</span></button>
               <button id="igfc-tab-history" class="igfc-tab" data-tab="history">🕒 Geçmiş <span class="igfc-tab-badge" id="igfc-cnt-history">0</span></button>
@@ -3928,6 +4371,7 @@
     document.getElementById('igfc-list-container')?.classList.toggle('compact-mode', state.viewMode === 'compact');
     applyTheme();
     applyZoom();
+    updateApiModeUI();
     updateQuotaBadgeUI();
     updateCacheInfoUI();
 
@@ -3957,6 +4401,18 @@
     document.getElementById('igfc-analytics-btn')?.addEventListener('click', openAnalyticsModal);
     document.getElementById('igfc-compare-modal-btn')?.addEventListener('click', openCompareModal);
     document.getElementById('igfc-settings-btn')?.addEventListener('click', openSettingsModal);
+    document.getElementById('igfc-install-btn')?.addEventListener('click', openInstallModal);
+    document.getElementById('igfc-error-install-btn')?.addEventListener('click', openInstallModal);
+    document.getElementById('igfc-mobile-banner-close')?.addEventListener('click', hideMobileSwitchBanner);
+    document.getElementById('igfc-apimode-badge')?.addEventListener('click', () => {
+      if (state.apiMode === 'mobile') {
+        state.apiMode = 'web';
+        updateApiModeUI();
+        showToast('💻 Web Moduna geçildi.', 'info');
+      } else {
+        switchToMobileMode('manual');
+      }
+    });
 
     document.getElementById('igfc-theme-select')?.addEventListener('change', (e) => {
       state.theme = e.target.value;
@@ -4139,7 +4595,7 @@
       : '⛔ Hata: Instagram Hız Sınırı (HTTP 429 – Too Many Requests)';
     const text = isEn
       ? 'Instagram temporarily rate-limited your session so the scan was stopped. Wait 30–60 minutes and try Safe Mode, or load your official Instagram JSON.'
-      : 'Instagram oturumunuza geçici istek sınırı (429) uyguladığı için tarama otomatik durduruldu. 30–60 dakika bekleyip Güvenli Mod ile deneyin veya resmi JSON dosyanızı yükleyin.';
+      : 'Hem Web hem Mobil Web modunda Instagram hız sınırı (429) algılandığı için tarama durduruldu. Farklı IP (mobil hotspot) ile deneyebilir, 30–60 dk bekleyebilir veya resmi JSON yükleyebilirsiniz.';
 
     state.lastRateLimitError = text;
     const banner = document.getElementById('igfc-error-banner');
@@ -4305,6 +4761,8 @@
       setTabLabel('igfc-tab-nonFollowers', '🚫 Takip Etmeyenler');
       setTabLabel('igfc-tab-fans', '💙 Takip Etmediklerin');
       setTabLabel('igfc-tab-lostFollowers', '📉 Yeni Çıkanlar');
+      setTabLabel('igfc-tab-lostFollowing', '➖ Takipten Çıkardıkların');
+      setTabLabel('igfc-tab-newFollowing', '➕ Yeni Takip Ettiklerin');
       setTabLabel('igfc-tab-allFollowers', '👥 Tüm Takipçiler');
       setTabLabel('igfc-tab-allFollowing', '📤 Tüm Takip Edilen');
     } else {
@@ -4324,6 +4782,8 @@
       setTabLabel('igfc-tab-nonFollowers', '🚫 Onu Takip Etmeyenler');
       setTabLabel('igfc-tab-fans', '💙 Onun Takip Etmedikleri');
       setTabLabel('igfc-tab-lostFollowers', '📉 Takipten Çıkanlar');
+      setTabLabel('igfc-tab-lostFollowing', '➖ Takipten Çıkardıkları');
+      setTabLabel('igfc-tab-newFollowing', '➕ Yeni Takip Ettikleri');
       setTabLabel('igfc-tab-allFollowers', '👥 Takipçileri');
       setTabLabel('igfc-tab-allFollowing', '📤 Takip Ettikleri');
     }
@@ -4360,6 +4820,8 @@
     setTxt('igfc-cnt-allFollowing', state.following.length);
     setTxt('igfc-cnt-lostFollowers', state.lostFollowers.length);
     setTxt('igfc-cnt-newFollowers', state.newFollowers.length);
+    setTxt('igfc-cnt-lostFollowing', state.lostFollowing.length);
+    setTxt('igfc-cnt-newFollowing', state.newFollowing.length);
     setTxt('igfc-cnt-favorites', state.favorites.size);
     setTxt('igfc-cnt-whitelist', state.whitelist.size);
     setTxt('igfc-cnt-history', state.unfollowHistory.length);
@@ -4395,6 +4857,10 @@
         return state.lostFollowers;
       case 'newFollowers':
         return state.newFollowers;
+      case 'lostFollowing':
+        return state.lostFollowing;
+      case 'newFollowing':
+        return state.newFollowing;
       case 'allFollowers':
         return state.followers;
       case 'allFollowing':
@@ -4834,6 +5300,8 @@
       state.suspicious = [];
       state.lostFollowers = [];
       state.newFollowers = [];
+      state.lostFollowing = [];
+      state.newFollowing = [];
       state.selectedIds.clear();
       updateStatsUI();
       updateBulkButtons();
@@ -4966,7 +5434,7 @@
         }
       }
 
-      compareAndSaveSnapshot(targetUserId, state.followers);
+      compareAndSaveSnapshot(targetUserId, state.followers, state.following);
       computeCategories();
       saveLastScanCache();
       saveScanHistory();
@@ -4998,7 +5466,7 @@
     } catch (err) {
       if (err.name === 'AbortError') {
         if (state.lastRateLimitError) {
-          updateStatus('⛔ Tarama durduruldu: Instagram Hız Sınırı (HTTP 429 – Too Many Requests)');
+          updateStatus('⛔ Tarama durduruldu: Hem Web hem Mobil modda Instagram HTTP 429 hız sınırı algılandı.');
         } else {
           addLog('⏹ Tarama kullanıcı tarafından iptal edildi.', 'warn');
         }
@@ -5183,22 +5651,75 @@
   }
 
   // ============================================================================
-  // BAŞLATMA (INITIALIZATION)
+  // BAŞLATMA (INITIALIZATION) — KONSOL VE USERSCRIPT (TAMPERMONKEY / MOBİL) UYUMLU
   // ============================================================================
 
-  loadSettings();
-  getWhitelist();
-  getNotes();
-  loadUserTags();
-  loadFavorites();
-  loadUnfollowHistory();
-  getScanHistory();
-  const hasCache = loadLastScanCache();
-  createUI();
-  if (hasCache) {
-    computeCategories();
-    renderList();
-    updateCacheInfoUI();
-    addLog(`Önbellekten son tarama yüklendi: @${state.username}`, 'info');
+  function openMainApp() {
+    if (document.getElementById(EXISTING_ID)) {
+      if (state.isMinimized) toggleMinimize();
+      return;
+    }
+    loadSettings();
+    getWhitelist();
+    getNotes();
+    loadUserTags();
+    loadFavorites();
+    loadUnfollowHistory();
+    getScanHistory();
+    const hasCache = loadLastScanCache();
+    createUI();
+    if (hasCache) {
+      computeCategories();
+      renderList();
+      updateCacheInfoUI();
+      addLog(`Önbellekten son tarama yüklendi: @${state.username}`, 'info');
+    }
+  }
+
+  function mountUserscriptLauncher() {
+    if (document.getElementById('igfc-launcher-fab')) return;
+    const fab = document.createElement('button');
+    fab.id = 'igfc-launcher-fab';
+    fab.type = 'button';
+    fab.textContent = '📸 IG Checker';
+    fab.title = 'Instagram Follow Checker Pro aç';
+    fab.style.cssText = [
+      'position:fixed',
+      'right:14px',
+      'bottom:16px',
+      'z-index:999998',
+      'background:linear-gradient(135deg,#6366f1,#ec4899)',
+      'color:#ffffff',
+      'border:1px solid rgba(255,255,255,0.28)',
+      'border-radius:999px',
+      'padding:9px 14px',
+      'font-size:12.5px',
+      'font-weight:700',
+      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
+      'box-shadow:0 8px 24px rgba(0,0,0,0.38)',
+      'cursor:pointer',
+      'touch-action:manipulation',
+    ].join(';');
+    fab.addEventListener('click', () => {
+      openMainApp();
+    });
+    document.body.appendChild(fab);
+  }
+
+  const isUserscriptEnv =
+    typeof GM_info !== 'undefined' ||
+    typeof GM_registerMenuCommand === 'function' ||
+    typeof GM_xmlhttpRequest === 'function';
+
+  if (typeof GM_registerMenuCommand === 'function') {
+    try {
+      GM_registerMenuCommand('📸 IG Follow Checker Pro Aç', openMainApp);
+    } catch (_) {}
+  }
+
+  if (isUserscriptEnv) {
+    mountUserscriptLauncher();
+  } else {
+    openMainApp();
   }
 })();
